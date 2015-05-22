@@ -5,27 +5,33 @@
 * Description:
 *-----------------------------------------------------------
 
-*method that takes the mode offset and register offset, and valid formats and determines valid, and if so prints
-
-
+*method that takes the mode offset and register offset, and valid formats and determines valid, and if so print
+    
     ORG    $1000
-
+    
+srt_addr  EQU     $3000
+end_addr  EQU     $3004
+    
     OFFSET  0
 op_value   DS.W    1
 op_mask    DS.W    1
     ORG *
 
 START                                       ; first instruction of program
-
-    MOVEA.L #srt_addr,A0                    *Load the starting address
-    MOVEA.L #end_addr,A1                    *Load the ending address
+    
+    MOVE.L  #srt_addr,current_addr          *Load the starting address
 
 LOOP
-    CMP.L   A0,A1                           *Compare to our starting and ending
-    BLE     DONE                            *Check if done
+    MOVEA.L current_addr,A0                 *Load the current address
+    CMP.L   #end_addr,A0                           *Compare to our starting and ending
+    BGE     DONE                            *Check if done
     CLR.W   output_string_displacement      *Clear the current word
     MOVE.W  (A0)+,D0                        *Move the current data to D0
+    MOVE.L  A0,current_addr                 *Update the current address
     MOVE.W  D0,D1
+    
+    MOVE
+    
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_nop+op_value,D1         *See if the values are equal
@@ -48,7 +54,7 @@ DONE
 sub_op_nop
     PEA     print_op_nop
     BSR     sub_build_string
-    LEA     long_size(SP),SP
+    LEA     4(SP),SP
     RTS
     
 sub_op_eor
@@ -58,13 +64,20 @@ sub_op_eor
     LEA     4(SP),SP                        *Move our stack pointer back
     MOVEM.L (SP)+,D0                        *Restore D0
     
+    MOVEM.L D0,-(SP)                        *Backup D0
     MOVE.W  #ea_reg_dir,-(SP)
     MOVE.W  #9,-(SP)
     BSR     sub_build_direct_string
     LEA     4(SP),SP
+    MOVEM.L (SP)+,D0                        *Restore D0
     
-    MOVE.W  
+    MOVEM.L D0,-(SP)                        *Backup D0
+    PEA     op_ea_dest_eor
+    MOVE.W  #3,-(SP)
+    MOVE.W  #0,-(SP)
     BSR     sub_check_ea_string
+    LEA     8(SP),SP
+    MOVEM.L (SP)+,D0                        *Restore D0
     
     RTS
 
@@ -215,6 +228,48 @@ sub_build_ea_string_rts
 
 **************************************************************
 *
+* sub_build_next_addr
+*
+* Grabs the next address from the 
+*
+* Stack Parameters:
+* 1 (W): Size defined by either word_size or long_size
+*
+
+    OFFSET 4
+sub_build_next_addr_size    DS.W    1
+    ORG *
+
+sub_build_next_addr
+    
+    MOVE.W  sub_build_next_addr_size(SP),D1
+    MOVEA.L current_addr,A0
+    
+    CMP.W   #word_size,D1
+    BNE     sub_build_next_addr_long
+    MOVE.W  (A0)+,D2
+    
+    MOVE.L  D2,-(SP)
+    MOVE.W  #false,-(SP)
+    MOVE.W  #word_size,-(SP)
+    BSR     sub_build_hex_string
+    LEA     8(SP),SP
+    RTS
+    
+sub_build_next_addr_long
+
+    MOVE.L  (A0)+,D2
+    
+    MOVE.L  D2,-(SP)
+    MOVE.W  #false,-(SP)
+    MOVE.W  #long_size,-(SP)
+    BSR     sub_build_hex_string
+    LEA     8(SP),SP
+    RTS
+    
+
+**************************************************************
+*
 * sub_build_direct_string
 *
 * Directly builds an EA string for register or address direct with a given number
@@ -276,6 +331,7 @@ sub_check_ea_string
     MOVE.W  D2,-(SP)                            *Push mode bit position onto stack
     MOVE.W  #3,-(SP)                            *Push the mode size (always 3) onto the stack
     BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+    LEA     4(SP),SP                            *Restore the stack
     MOVEM.L (SP)+,D3                            *Restore D3 and A2
     
     MOVE.W  D1,D2                               *Move the mode value to D2
@@ -284,6 +340,7 @@ sub_check_ea_string
     MOVE.W  D3,-(SP)                            *Push the reg bit position onto stack
     MOVE.W  #3,-(SP)                            *Push the reg size (always 3) onto the stack
     BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+    LEA     4(SP),SP                            *Restore the stack
     MOVEM.L (SP)+,D2                            *Restore D2 and A2
     
     MOVE.W  D1,D3                               *Move the reg value back to D3
@@ -291,12 +348,29 @@ sub_check_ea_string
     MOVEA.L sub_check_ea_string_add(SP),A2      *Move the starting address mode value to A2
     
 sub_check_ea_string_loop
-    
-    MOVE.B  (A2)+,D1
-    CMP.B   #ea_term,D1
-    BEQ     sub_check_ea_string_rts
-    BRA     sub_check_ea_string_loop
-
+    MOVE.B  (A2)+,D1                            *Grab the next ea_mode and store in D1
+    CMP.B   #ea_term,D1                         *See if we are at the end of the available modes
+    BEQ     sub_check_ea_string_not_found       *Branch to not found if true
+    CMP.B   #ea_abs,D1                          *Test if it's absolute
+    BEQ     sub_check_ea_string_abs             *Branch to absolute special case if so
+    CMP.B   D1,D2                               *Test to see if our mode matches
+    BEQ     sub_check_ea_string_print           *Branch to print if it does
+    BRA     sub_check_ea_string_loop            *Otherwise loop back through
+sub_check_ea_string_abs
+    MOVE.B  (A2)+,D4                            *Get the absolute addressing mode (as register value)
+    CMP.B   #ea_abs,D2                          *Check to see if our mode is the absolute mode
+    BNE     sub_check_ea_string_loop            *If it's not we'll go back to the loop
+    CMP.B   D4,D3                               *See if it matches the register value
+    BEQ     sub_check_ea_string_print           *If so we'll print it out
+    BRA     sub_check_ea_string_loop            *Otherwise we'll loop back again
+sub_check_ea_string_print    
+    MOVE.W  D2,-(SP)                            *Load the mode to the stack
+    MOVE.W  D3,-(SP)                            *Load the register to the stack
+    BSR     sub_build_ea_string                 *Build that string
+    LEA     4(SP),SP                            *Reset the stack
+    BRA     sub_check_ea_string_rts             *Return
+sub_check_ea_string_not_found
+    MOVE.W  D2,D3   ***Stop here                *Set the data invalid flag true
 sub_check_ea_string_rts
     RTS
 
@@ -401,8 +475,6 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
-srt_addr  EQU     $3000
-end_addr  EQU     $3002
 byte_size EQU     1
 word_size EQU     2
 long_size EQU     4
@@ -435,6 +507,7 @@ const_print_d           EQU   'D'
 
 output_string               DS.B    40
 output_string_displacement  DS.W    1
+current_addr                DS.L    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
 
@@ -471,7 +544,7 @@ LF EQU $0A
     * TEST PROGRAM *
 
     ORG     $3000
-    EOR.L   D5,D1
+    MOVE.B  #244,D3
     NOP
 
     END    START        ; last line of source
