@@ -66,8 +66,8 @@ sub_op_eor
     BSR     sub_build_string    *Output the string
     LEA     long_size(SP),SP    *Restore the stack state
     
-    MOVE.W  #6,-(SP)
-    MOVE.W  #1,-(SP)
+    MOVE.W  #6,-(SP)            *Start from 
+    MOVE.W  #2,-(SP)
     BSR     sub_handy_mask
     LEA     8(SP),SP
     
@@ -211,7 +211,7 @@ sub_build_ea_string_rts
 *
 * Adds a period, the size and a space: ".S " where S is size
 *
-* Paremeters:
+* Stack Parameters:
 * 1 (W): Size
 
     OFFSET 4
@@ -264,8 +264,18 @@ sub_build_string_comma_space
 *
 * sub_handy_mask
 *
-* Adds a single comma to the string
-* Value passed in through D1, returns masked portion to D0
+* Given a value, lower bound, and size, this method will return the masked
+* values starting from the LSB to D0
+*
+* Register Parameters
+* D1 (L): Should contain the value to mask and split
+*
+* Stack Parameters
+* 1 (W): Lower bit bound
+* 2 (W): Size (number of bits to mask)
+*
+* Register Return
+* D0 (L): Masked value
 *
     OFFSET 4
 sub_handy_mask_size     DS.W    1
@@ -273,25 +283,23 @@ sub_handy_mask_lower    DS.W    1
     ORG *
     
 sub_handy_mask
-    MOVE.W      sub_handy_mask_lower(SP),D5
-    MOVE.W      sub_handy_mask_size(SP),D2
-    CLR.L       D3                          *Clear D3
-    MOVE.W      D2,D4
-    ADD.W       D5,D4
+    MOVE.W      sub_handy_mask_lower(SP),D5 *Load the lower bound size
+    MOVE.W      sub_handy_mask_size(SP),D2  *Load the size
+    CLR.L       D3                          *Clear D3 to be used as a mask
+    MOVE.W      D2,D4                       *Copy the size to D4
+    ADD.W       D5,D4                       *Add the lower bound and size to get the MSB of the mask
 sub_handy_mask_loop
-    CMP.W       D5,D4
-    BLT         sub_handy_mask_done
-    BSET        D4,D3
-    SUBQ.W      #1,D4
-    BRA         sub_handy_mask_loop
+    CMP.W       D5,D4                       *Compare our counter to the lower bound
+    BLE         sub_handy_mask_done         *If our counter is less than or equal we are done making the mask
+    BSET        D4,D3                       *Set the bit to one in the mask at location D4
+    SUBQ.W      #1,D4                       *Decrement D4 by one
+    BRA         sub_handy_mask_loop         *Go back to loop again
 sub_handy_mask_done
-    MOVE.L      D1,D0
-    AND.L       D3,D0      
-    LSR.L       D5,D0
+    MOVE.L      D1,D0                       *Move the value that should be masked to D0
+    AND.L       D3,D0                       *Mask it with D3 (the mask we made above)
+    LSR.L       D5,D0                       *Shift the result right so that it starts at the LSB
     RTS
-    
-    
-
+   
 
 *********** CONSTANTS ***********
 
