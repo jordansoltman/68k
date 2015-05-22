@@ -6,73 +6,47 @@
 *-----------------------------------------------------------
     ORG    $1000
     
-START                  ; first instruction of program
-    CLR.W       output_string_displacement ****MOVE ME!!!!
-    MOVEA.L #srt_addr,A2        *Load the starting address
-    MOVEA.L #end_addr,A3        *Load the ending address
-
+    OFFSET  0
+op_value   DS.W    1
+op_mask    DS.W    1
+    ORG *
+    
+START                                       ; first instruction of program
+    CLR.W       output_string_displacement  ****MOVE ME!!!!
+    MOVEA.L #srt_addr,A2                    *Load the starting address
+    MOVEA.L #end_addr,A3                    *Load the ending address
+    
 LOOP
-    CMP.L   A2,A3               *Compare to our starting and ending
-    BLE     DONE                *Check if done
-    MOVE.W  (A2)+,D0            *Move the current data to D0
+    CMP.L   A2,A3                           *Compare to our starting and ending
+    BLE     DONE                            *Check if done
+    MOVE.W  (A2)+,D0                        *Move the current data to D0
     MOVE.W  D0,D1
-    AND.W   op_code_nop+2,D0    *And against the first bitmask
-    CMP.W   op_code_nop,D0      *See if the values are equal
-    BEQ     OP_NOP              *If it's a match then we'll go to the OP_NOP routine
-    BRA     OP_DATA
+CHECK_NOP
+    AND.W   op_code_nop+op_mask,D0          *And against the first bitmask
+    CMP.W   op_code_nop+op_value,D0         *See if the values are equal
+    BNE     CHECK_EOR
+    BSR     sub_op_nop                          *If it's a match then we'll go to the OP_NOP routine
+    BRA     LOOP
+CHECK_EOR
+    MOVE.W  D1,D0
+    AND.W   op_code_eor+op_mask,D0          *And against the first bitmask
+    CMP.W   op_code_eor+op_value,D0         *See if the values are equal
+    BNE     CHECK_DATA                          *If it's a match then we'll go to the OP_NOP routine
+    BSR     sub_op_eor
+    BRA     LOOP
+CHECK_DATA
+    BSR     sub_op_data
+    BRA     LOOP
 DONE
     SIMHALT             ; halt simulator
 
-OP_NOP
+sub_op_nop
     PEA     print_op_nop
     BSR     sub_build_string
-    LEA     long_size(SP),SP
-    
-    MOVE.L  #$ABCD,-(SP)
-    MOVE.W  #true,-(SP)
-    MOVE.W  #word_size,-(SP)
-    BSR     sub_build_hex_string
-    LEA     8(SP),SP
-    
-    MOVE.W  #ea_mode_reg_direct,-(SP)
-    MOVE.W  #0,-(SP)
-    BSR     sub_build_ea_string
-    LEA     4(SP),SP
-    
-    *BSR     sub_build_string_comma_space
-    
-    MOVE.W  #ea_mode_reg_direct,-(SP)
-    MOVE.W  #0,-(SP)
-    BSR     sub_build_ea_string
-    LEA     4(SP),SP
-    
-    PEA     print_op_eor
-    BSR     sub_build_string
-    LEA     long_size(SP),SP
-    
-    MOVE.W  #byte_size,-(SP)
-    BSR     sub_build_instr_size
-    LEA     2(SP),SP
-    
-    PEA     print_op_eor
-    BSR     sub_build_string
-    LEA     long_size(SP),SP
-    
-    MOVE.W  #word_size,-(SP)
-    BSR     sub_build_instr_size
-    LEA     2(SP),SP
-    
-    PEA     print_op_eor
-    BSR     sub_build_string
-    LEA     long_size(SP),SP
-    
-    MOVE.W  #long_size,-(SP)
-    BSR     sub_build_instr_size
-    LEA     2(SP),SP
-    
-    BRA     LOOP
+    LEA     long_size(SP),SP    
+    RTS
 
-OP_DATA
+sub_op_data
     LEA     print_blank,A1
     MOVEQ   #14,D0
     TRAP    #15
@@ -85,7 +59,21 @@ OP_DATA
     MOVEQ   #13,D0
     TRAP    #15
 
-    BRA     LOOP
+    RTS
+    
+sub_op_eor
+    PEA     print_op_eor        *Push the EOR address string onto the stack
+    BSR     sub_build_string    *Output the string
+    LEA     long_size(SP),SP    *Restore the stack state
+    
+    MOVE.W  #6,-(SP)
+    MOVE.W  #1,-(SP)
+    BSR     sub_handy_mask
+    LEA     8(SP),SP
+    
+    
+    
+    RTS
     
     
 **************************************************************
@@ -266,11 +254,43 @@ sub_build_string_comma_space
     MOVEA.L     #hex_characters,A1                  *Load the hex characters
     MOVE.W      output_string_displacement,D0       *Load current displacement to D0
     ADD.W       D0,A0                               *Adjust the address for the current displacement
-    MOVE.W      #',',(A0)+                          *add a ',' to the output string
-    MOVE.W      #' ',(A0)+                          *add a ',' to the output string
+    MOVE.B      #',',(A0)+                          *add a ',' to the output string
+    MOVE.B      #' ',(A0)+                          *add a ',' to the output string
     ADDQ.W      #2,D0                               *Increase the displacement by two
     MOVE.W      D0,output_string_displacement       *Save the updated displacement
     RTS
+
+**************************************************************
+*
+* sub_handy_mask
+*
+* Adds a single comma to the string
+* Value passed in through D1, returns masked portion to D0
+*
+    OFFSET 4
+sub_handy_mask_size     DS.W    1
+sub_handy_mask_lower    DS.W    1
+    ORG *
+    
+sub_handy_mask
+    MOVE.W      sub_handy_mask_lower(SP),D5
+    MOVE.W      sub_handy_mask_size(SP),D2
+    CLR.L       D3                          *Clear D3
+    MOVE.W      D2,D4
+    ADD.W       D5,D4
+sub_handy_mask_loop
+    CMP.W       D5,D4
+    BLT         sub_handy_mask_done
+    BSET        D4,D3
+    SUBQ.W      #1,D4
+    BRA         sub_handy_mask_loop
+sub_handy_mask_done
+    MOVE.L      D1,D0
+    AND.L       D3,D0      
+    LSR.L       D5,D0
+    RTS
+    
+    
 
 
 *********** CONSTANTS ***********
@@ -318,7 +338,7 @@ print_space         DC.B    ' ',0
 
 op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
-op_code_eor     DC.W    $B1C0,$F1C0
+op_code_eor     DC.W    $B100,$F100
 
 print_op_nop    DC.B    'NOP ',0
 print_op_data   DC.B    'DATA ',0
@@ -335,7 +355,7 @@ LF EQU $0A
     * TEST PROGRAM *
 
     ORG     $3000
-    NOP
+    EOR.L   D0,D1
     NOP
 
     END    START        ; last line of source
