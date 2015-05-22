@@ -5,7 +5,6 @@
 * Description:
 *-----------------------------------------------------------
 
-*method that takes the offset to a data register or address register number and prints out
 *method that takes the mode offset and register offset, and valid formats and determines valid, and if so prints
 
 
@@ -63,6 +62,9 @@ sub_op_eor
     MOVE.W  #9,-(SP)
     BSR     sub_build_direct_string
     LEA     4(SP),SP
+    
+    MOVE.W  
+    BSR     sub_check_ea_string
     
     RTS
 
@@ -215,7 +217,7 @@ sub_build_ea_string_rts
 *
 * sub_build_direct_string
 *
-* Adds an EA to the string
+* Directly builds an EA string for register or address direct with a given number
 *
 * Stack Parameters:
 * 1 (W): Mode in defined ea_reg_dir or ea_add_dir
@@ -244,6 +246,61 @@ sub_build_direct_string
     LEA     4(SP),SP                                *Reset the stack pointer
     
     RTS
+    
+**************************************************************
+*
+* sub_check_ea_string
+*
+* Adds an EA to the string
+*
+* Stack Parameters:
+* 1 (L): Address of valid modes
+* 2 (W): Mode starting bit location within D0
+* 3 (W): Register starting bit location within D0
+*
+* Register Parameters:
+* 1 (L): D0 should contain the current op code
+*
+    OFFSET 4
+sub_check_ea_string_reg     DS.W    1
+sub_check_ea_string_mode    DS.W    1
+sub_check_ea_string_add     DS.L    1
+    ORG *
+
+sub_check_ea_string
+    
+    MOVE.W  sub_check_ea_string_mode(SP),D2     *Move the bit position of the mode to D2
+    MOVE.W  sub_check_ea_string_reg(SP),D3      *Move the bit position of the reg to D3
+    
+    MOVEM.L D3,-(SP)                            *Backup D3 (reg bit pos) and A2
+    MOVE.W  D2,-(SP)                            *Push mode bit position onto stack
+    MOVE.W  #3,-(SP)                            *Push the mode size (always 3) onto the stack
+    BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+    MOVEM.L (SP)+,D3                            *Restore D3 and A2
+    
+    MOVE.W  D1,D2                               *Move the mode value to D2
+    
+    MOVEM.L D2,-(SP)                            *Backup the mode value (D2)
+    MOVE.W  D3,-(SP)                            *Push the reg bit position onto stack
+    MOVE.W  #3,-(SP)                            *Push the reg size (always 3) onto the stack
+    BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+    MOVEM.L (SP)+,D2                            *Restore D2 and A2
+    
+    MOVE.W  D1,D3                               *Move the reg value back to D3
+    
+    MOVEA.L sub_check_ea_string_add(SP),A2      *Move the starting address mode value to A2
+    
+sub_check_ea_string_loop
+    
+    MOVE.B  (A2)+,D1
+    CMP.B   #ea_term,D1
+    BEQ     sub_check_ea_string_rts
+    BRA     sub_check_ea_string_loop
+
+sub_check_ea_string_rts
+    RTS
+
+    
 
 **************************************************************
 *
@@ -418,6 +475,7 @@ LF EQU $0A
     NOP
 
     END    START        ; last line of source
+
 
 
 
