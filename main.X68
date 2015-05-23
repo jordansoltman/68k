@@ -17,6 +17,7 @@ end_addr  EQU     $3010
     OFFSET  0
 op_value   DS.W    1
 op_mask    DS.W    1
+op_def     DS.W    1
     ORG *
 
 START                                       ; first instruction of program
@@ -37,19 +38,22 @@ LOOP
     MOVEM.L D0,-(SP)
     BSR     sub_build_current_line_address
     MOVEM.L (SP)+,D0
+    MOVE.W  D0,D1    
     
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_nop+op_value,D1         *See if the values are equal
-    BNE     CHECK_EOR
+    BNE     CHECK_OR
     BSR     sub_op_nop                      *If it's a match then we'll go to the OP_NOP routine
     BRA     OUTPUT
-CHECK_EOR
+CHECK_OR
     MOVE.W  D0,D1
-    AND.W   op_code_eor+op_mask,D1          *And against the first bitmask
-    CMP.W   op_code_eor+op_value,D1         *See if the values are equal
+    AND.W   op_code_or+op_mask,D1          *And against the first bitmask
+    CMP.W   op_code_or+op_value,D1         *See if the values are equal
     BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
-    BSR     sub_op_eor
+    PEA     op_code_or+op_def
+    BSR     sub_process_opcode
+    LEA     2(SP),SP
     BRA     OUTPUT
 CHECK_DATA
     BSR     sub_op_data
@@ -64,15 +68,15 @@ OUTPUT
     BRA     LOOP
 
 sub_op_nop
-    PEA     print_op_nop
-    BSR     sub_build_string
-    LEA     4(SP),SP
+    *PEA     print_op_nop
+    *BSR     sub_build_string
+    *LEA     4(SP),SP
     RTS
     
 sub_op_eor
     
     MOVEM.L D0,-(SP)
-    PEA     print_op_eor
+    *PEA     print_op_eor
     MOVE.W  #6,-(SP)
     MOVE.W  #%00,-(SP)
     MOVE.W  #%01,-(SP)
@@ -120,6 +124,20 @@ sub_op_data
 
     RTS
 
+**************************************************************
+*
+* sub_process_opcode
+*
+* * 1 (L): Address of operation definition
+*
+    OFFSET 4
+sub_process_opcode_addr DS.L    1
+    ORG *
+    
+sub_process_opcode
+    MOVEA.L sub_process_opcode_addr(SP),A0
+    
+    
 
 **************************************************************
 *
@@ -157,7 +175,7 @@ sub_build_current_line_address
 *
 * sub_build_char
 *
-* Add
+* Adds a single character to the output string
 *
     OFFSET 4
 sub_build_char_ascii DS.W    1
@@ -655,7 +673,7 @@ true      EQU     1
 false     EQU     0
 
 *** opf definitions ***
-* label [op name string address],[size],[optional: [flip bit]],[type],[optional: [type]],[optional: opf_flipped],[optional: [type]],[optional: [type]]
+* label [op name string address],{[size],[flip bit],[type],[type],opf_flipped,[type],[type],}[opf_term]
 *
 * [size] =
 * opf_size [byte_size | word_size | long_size]
@@ -751,11 +769,14 @@ op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_
 op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
 op_code_eor     DC.W    $B100,$F100
-op_code_or      DC.W    $8000,$F000,
+op_code_or      DC.W    $8000,$F000,op_def_or
+
+op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
 
 op_string_nop    DC.B    'NOP',0
 op_string_data   DC.B    'DATA',0
 op_string_eor    DC.B    'EOR',0
+op_string_or     DC.B    'OR',0
 
 
 CR EQU $0D
@@ -766,11 +787,10 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    EOR.L   D3,$12345678
-    EOR.W   D3,d2
-    EOR.L   D1,(A0)+
+    OR.L    $1234,D5
     
     END    START        ; last line of source
+
 
 
 
