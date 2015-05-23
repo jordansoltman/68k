@@ -26,6 +26,7 @@ LOOP
     CMP.L   #end_addr,A0                    *Compare to our starting and ending
     BGE     DONE                            *Check if done
     CLR.W   output_string_displacement      *Clear the current word
+    CLR.B   invalid_op_flag                 *Clear the invalid flag
     MOVE.W  (A0)+,D0                        *Move the current data to D0
     MOVE.L  A0,current_addr                 *Update the current address
     MOVE.W  D0,D1    
@@ -34,19 +35,25 @@ CHECK_NOP
     CMP.W   op_code_nop+op_value,D1         *See if the values are equal
     BNE     CHECK_EOR
     BSR     sub_op_nop                      *If it's a match then we'll go to the OP_NOP routine
-    BRA     LOOP
+    BRA     OUTPUT
 CHECK_EOR
     MOVE.W  D0,D1
     AND.W   op_code_eor+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_eor+op_value,D1         *See if the values are equal
     BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
     BSR     sub_op_eor
-    BRA     LOOP
+    BRA     OUTPUT
 CHECK_DATA
     BSR     sub_op_data
     BRA     LOOP
 DONE
     SIMHALT             ; halt simulator
+
+OUTPUT
+    LEA     output_string,A1
+    MOVEQ   #13,D0
+    TRAP    #15
+    BRA     LOOP
 
 sub_op_nop
     PEA     print_op_nop
@@ -60,6 +67,12 @@ sub_op_eor
     BSR     sub_build_string                *Print it out to our output string
     LEA     4(SP),SP                        *Move our stack pointer back
     MOVEM.L (SP)+,D0                        *Restore D0
+    
+    MOVEM.L D0,-(SP)
+    MOVE.W  #long_size,-(SP)
+    BSR     sub_build_instr_size
+    LEA     2(SP),SP
+    MOVEM.L (SP)+,D0
     
     MOVEM.L D0,-(SP)                        *Backup D0
     MOVE.W  #ea_reg_dir,-(SP)
@@ -76,10 +89,12 @@ sub_op_eor
     PEA     op_ea_dest_eor
     MOVE.W  #3,-(SP)
     MOVE.W  #0,-(SP)
-    MOVE.W  #long_size,-(SP)
+    MOVE.W  #long_size,-(SP)    ***UPDATE***
     BSR     sub_check_ea_string
     LEA     10(SP),SP
     MOVEM.L (SP)+,D0                        *Restore D0
+    
+    BSR     sub_build_finish
     
     RTS
 
@@ -98,6 +113,19 @@ sub_op_data
 
     RTS
 
+
+**************************************************************
+*
+* sub_build_finish
+*
+* Puts a null character at the end
+*
+sub_build_finish
+    MOVEA.L     #output_string,A0
+    MOVE.W      output_string_displacement,D0   *Load current displacement to D0
+    ADD.W       D0,A0                           *Adjust the address for the current displacement
+    MOVE.B      #null,(A0)
+    RTS
 
 **************************************************************
 *
@@ -398,7 +426,7 @@ sub_check_ea_string_print
     LEA     6(SP),SP                            *Reset the stack
     BRA     sub_check_ea_string_rts             *Return
 sub_check_ea_string_not_found
-    MOVE.W  D2,D3   ***Stop here                *Set the data invalid flag true
+    MOVE.B  #true,invalid_op_flag               *Set the data invalid flag true
 sub_check_ea_string_rts
     RTS
 
@@ -516,7 +544,7 @@ ea_ari                 EQU %010
 ea_ari_post            EQU %011
 ea_ari_pre             EQU %100
 
-ea_abs                 EQU %111
+ea_abs                 EQU %111    *This MUST preceed each ea_word,ea_long,ea_imm
 ea_word                EQU %000    *Used in conjunction with abs
 ea_long                EQU %001    *Used in conjunction with abs
 ea_imm                 EQU %100    *Used in conjunction with abs
@@ -536,16 +564,18 @@ const_print_minus       EQU   '-'
 const_print_a           EQU   'A'
 const_print_d           EQU   'D'
 
+******* STORAGE **********
+
 output_string               DS.B    40
 output_string_displacement  DS.W    1
 current_addr                DS.L    1
+invalid_op_flag             DS.B    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
 
 * Put variables and constants here
 
-print_blank         DC.B    '',0
-print_space         DC.B    ' ',0
+print_blank         DC.B    0
 
 
 *Value first, mask second
@@ -564,7 +594,7 @@ print_op_nop    DC.B    'NOP ',0
 print_op_data   DC.B    'DATA ',0
 print_op_eor    DC.B    'EOR',0
 
-print_size_long DC.B    'L ',0
+print_size_long DC.B    'L',$9,0
 print_size_word DC.B    'W ',0
 print_size_byte DC.B    'B ',0
 
@@ -572,9 +602,10 @@ CR EQU $0D
 LF EQU $0A
 
 
-    * TEST PROGRAM *
+    * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+*tst DC.W    $BB88
     EOR.L   D3,$12345678
     EOR.W   D0,$ABCD
     EOR.L   D1,(A0)+
