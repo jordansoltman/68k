@@ -5,7 +5,9 @@
 * Description:
 *-----------------------------------------------------------
 
-*method that takes the mode offset and register offset, and valid formats and determines valid, and if so print
+*method that takes the available sizes and their addresses, no_size for invalid
+*returns the prints and returns the mode
+    
     
     ORG    $1000
     
@@ -22,6 +24,7 @@ START                                       ; first instruction of program
     MOVE.L  #srt_addr,current_addr          *Load the starting address
 
 LOOP
+    MOVE.L  current_addr,current_addr_backup *Creates a backup of the address
     MOVEA.L current_addr,A0                 *Load the current address
     CMP.L   #end_addr,A0                    *Compare to our starting and ending
     BGE     DONE                            *Check if done
@@ -121,11 +124,24 @@ sub_op_data
 * Puts a null character at the end
 *
 sub_build_finish
-    MOVEA.L     #output_string,A0
+    MOVEA.L     #output_string,A0               *Load the output string
     MOVE.W      output_string_displacement,D0   *Load current displacement to D0
     ADD.W       D0,A0                           *Adjust the address for the current displacement
     MOVE.B      #null,(A0)
     RTS
+
+**************************************************************
+*
+* sub_build_current_line_address
+*
+* Puts a null character at the end
+*
+sub_build_current_line_address
+    MOVEA.L     #output_string,A0               *Load the output string
+    MOVE.W      output_string_displacement,D0   *Load current displacement to D0
+    ADD.W       D0,A0                           *Adjust the address for the current displacement
+    
+    
 
 **************************************************************
 *
@@ -159,45 +175,43 @@ sub_build_string_rts
 *
 * Parameters
 * 1 (L): Value that should be converted to hex and added to string
-* 2 (W): Boolean IN (true, false) that determines if it should be printed as an immediate
+* 2 (W): Boolean IN (true, false) that determines if it should print the $ symbol in front
 * 3 (W): Size IN (byte_size, word_size, long_size) that determines what size to print as
 
     OFFSET 4
-size        DS.W    1
-immediate   DS.W    1
-value       DS.L    1
+sub_build_hex_string_size        DS.W    1
+sub_build_hex_string_hex_flag    DS.W    1
+sub_build_hex_string_value       DS.L    1
     ORG *
 
 sub_build_hex_string
-    MOVEA.L     #output_string,A0                   *Load the output string
-    MOVEA.L     #hex_characters,A1                  *Load the hex characters
-    MOVE.W      output_string_displacement,D0       *Load current displacement to D0
-    ADD.W       D0,A0                               *Adjust the address for the current displacement
-    MOVE.W      size(SP),D1                         *Get the size and save it in D1
-    LSL.W       #1,D1                               *Multiply by 2 because we defined bytes not digits
-    MOVE.W      D1,D4                               *Copy the size for later
-    MOVE.W      immediate(SP),D2                    *Get immediate boolean and save in D2
-    MOVE.L      value(SP),D3                        *Get the value and save in D3
-    CMP.B       #false,D2                           *See if we are printing an immediate
-    BEQ         sub_build_hex_string_hex            *Skip printing the hex sign if immediate is set false
-    MOVE.B      #const_print_pound_sym,(A0)+        *Output the pound symbol
-    ADDQ.W      #byte_size,D0                       *Add to our displacement incrementer
+    MOVEA.L     #output_string,A0                       *Load the output string
+    MOVEA.L     #hex_characters,A1                      *Load the hex characters
+    MOVE.W      output_string_displacement,D0           *Load current displacement to D0
+    ADD.W       D0,A0                                   *Adjust the address for the current displacement
+    MOVE.W      sub_build_hex_string_size(SP),D1        *Get the size and save it in D1
+    LSL.W       #1,D1                                   *Multiply by 2 because we defined bytes not digits
+    MOVE.W      D1,D4                                   *Copy the size for later
+    MOVE.W      sub_build_hex_string_hex_flag(SP),D2    *Get immediate boolean and save in D2
+    MOVE.L      sub_build_hex_string_value(SP),D3       *Get the value and save in D3
+    CMP.B       #false,D2                               *See if we are printing a $ symbol
+    BEQ         sub_build_hex_string_loop               *Skip printing the hex sign if immediate is set false
 sub_build_hex_string_hex
-    MOVE.B      #const_print_hex_sym,(A0)+          *Add in the $ symbol for hex
-    ADDQ.W      #byte_size,D0                       *Add one to displacement counter
-    ADDA.W      D1,A0                               *increment the pointer by the number size
+    MOVE.B      #const_print_hex_sym,(A0)+              *Add in the $ symbol for hex
+    ADDQ.W      #byte_size,D0                           *Add one to displacement counter
+    ADDA.W      D1,A0                                   *increment the pointer by the number size
 sub_build_hex_string_loop
-    CMP.W       #0,D1                               *See if we are done
-    BEQ         sub_build_hex_string_rts            *Exit the subroutine
-    SUBQ.W      #1,D1                               *Decrease our counter by one
-    MOVE.W      D3,D5                               *Move the byte from D3 to D5
-    AND.W       #right_nibble_mask,D5               *Mask the last nibble in D5
-    MOVE.B      (0,A1,D5.W),-(A0)                   *Add remainder to output string
-    LSR.L       #4,D3                               *Shift our hex value right by two
-    BRA         sub_build_hex_string_loop           *Loop
+    CMP.W       #0,D1                                   *See if we are done
+    BEQ         sub_build_hex_string_rts                *Exit the subroutine
+    SUBQ.W      #1,D1                                   *Decrease our counter by one
+    MOVE.W      D3,D5                                   *Move the byte from D3 to D5
+    AND.W       #right_nibble_mask,D5                   *Mask the last nibble in D5
+    MOVE.B      (0,A1,D5.W),-(A0)                       *Add remainder to output string
+    LSR.L       #4,D3                                   *Shift our hex value right by two
+    BRA         sub_build_hex_string_loop               *Loop
 sub_build_hex_string_rts
-    ADD.W       D4,D0                               *Add our total displacement
-    MOVE.W      D0,output_string_displacement       *Update the displacement
+    ADD.W       D4,D0                                   *Add our total displacement
+    MOVE.W      D0,output_string_displacement           *Update the displacement
     RTS
 
 **************************************************************
@@ -569,6 +583,7 @@ const_print_d           EQU   'D'
 output_string               DS.B    40
 output_string_displacement  DS.W    1
 current_addr                DS.L    1
+current_addr_backup         DS.L    1
 invalid_op_flag             DS.B    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
@@ -611,6 +626,8 @@ LF EQU $0A
     EOR.L   D1,(A0)+
     
     END    START        ; last line of source
+
+
 
 
 
