@@ -51,7 +51,8 @@ CHECK_OR
     AND.W   op_code_or+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_or+op_value,D1         *See if the values are equal
     BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
-    PEA     op_code_or+op_def
+    MOVEA.W op_code_or+op_def,A1
+    PEA     (A1)
     BSR     sub_process_opcode
     LEA     2(SP),SP
     BRA     OUTPUT
@@ -135,9 +136,188 @@ sub_process_opcode_addr DS.L    1
     ORG *
     
 sub_process_opcode
-    MOVEA.L sub_process_opcode_addr(SP),A0
+    MOVEA.L sub_process_opcode_addr(SP),A0  *Load the opcode definition address
     
+    CLR.L   D1                              *Clear D1 so it can take a long address
+    MOVE.W  (A0)+,D1                        *Get opcode name address
     
+    **** Print opcode name
+    MOVEM.L D0/A0,-(SP)
+    MOVE.L  D1,-(SP)                        *Push string name onto the stack for printing
+    BSR     sub_build_string                *Build the string
+    LEA     4(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/A0
+
+    MOVE.W  (A0)+,D1                        *Get the size type or terminating opf
+    
+    CMP.W   #opf_term,D1                    *See if we have terminated
+    BEQ     sub_process_opcode_rts          *We are done with this code so we'll return
+    
+    CMP.W   #opf_size,D1                    *See if it is a size
+    BNE     sub_process_opcode_opf_sizes    *Must support different sizes (not a single size)
+    
+    MOVE.W  (A0)+,D7                        *Store the size in D7
+    BRA     sub_process_opcode_tab
+    
+sub_process_opcode_opf_sizes
+    
+    MOVE.W  (A0)+,D2                        *Get the size bit position
+    MOVE.W  (A0)+,D3                        *Get the byte size format
+    MOVE.W  (A0)+,D4                        *Get the word size format
+    MOVE.W  (A0)+,D5                        *Get the long size format
+    
+    MOVEM.L D0/A0,-(SP)                     *Save the registers
+    
+    MOVE.W  D2,-(SP)
+    MOVE.W  D3,-(SP)
+    MOVE.W  D4,-(SP)
+    MOVE.W  D5,-(SP)
+    
+    BSR     sub_build_op                    *Build the size operand
+    LEA     8(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
+    
+    MOVE.W  D1,D7                           *Save the size to D7
+            
+    CMP.B   #true,invalid_op_flag           *See if the size was invalid
+    BEQ     sub_process_opcode_rts          *Branch to end if so
+        
+sub_process_opcode_tab
+    
+    MOVEM.L D0/D7/A0,-(SP)                  *Save the registers
+    MOVE.W  #TAB,-(SP)                      *Push a tab onto the stack
+    BSR     sub_build_char                  *Output out the tab
+    LEA     2(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    
+    MOVE.W  (A0)+,D1                        *Move next keyword to D1
+    
+    CMP.W   #opf_term,D1                    *See if this code is done
+    BEQ     sub_process_opcode_rts          *If so we are done
+    
+    CMP.W   #opf_flip,D1                    *See if the flip bit is set
+    BNE     sub_process_opcode_types        *If not we'll skip to types
+    
+    MOVE.W  (A0)+,D1                        *Get the determinate bit position
+    BTST    D1,D0                           *Test to see if the flip bit is set
+    BEQ     sub_process_opcode_types
+    
+sub_process_opcode_flip_loop
+    CMP.W   #opf_flipped,(A0)+              *Get next bit and increment by one
+    BEQ     sub_process_opcode_types        *If we are at the opf_flipped bit we are done and ready to output
+    BRA     sub_process_opcode_flip_loop    *Otherwise let's loop again
+    
+sub_process_opcode_types
+
+    MOVE.W  (A0)+,D1                        *Get the next keyword
+   
+    CMP.W   #opf_count,D1                   *See if we are passing in a count
+    BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
+    
+    ** code for count
+    MOVE.W  (A0)+,D1                        *Get the immediate count value
+    
+    MOVEM.L D0/D1/D7/A0,-(SP)                  *Backup registers
+    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+    BSR     sub_build_char                  *Output the pound sign
+    LEA     2(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D1/D7/A0                  *Restore the registers
+    
+    MOVEM.L D0/D7/A0,-(SP)                     *Backup registers
+    MOVE.W  D1,-(SP)                        *Put the value to the stack
+    MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
+    MOVE.W  #byte_size,-(SP)                *Print it out as a byte
+    BSR     sub_build_hex_string            *Print out the value
+    LEA     8(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+    
+    BRA     sub_process_opcode_types_next   *Go on to the next item
+    
+sub_process_opcode_types_reg
+    
+    CMP.W   #opf_reg,D1
+    BNE     sub_process_opcode_types_cnt_reg
+    ** code for reg
+    
+sub_process_opcode_types_reg_qwk               *Quick access to reg
+    
+    MOVE.W  (A0)+,D1                        *Get starting bit position
+    MOVE.W  (A0)+,D2                        *Get register mode (ea_mode_reg | ea_mode_addr)
+    
+    MOVEM.L D0/D7/A0,-(SP)                     *Backup the registers
+    
+    MOVE.W  D2,-(SP)                        *Push mode onto the stack
+    MOVE.W  D1,-(SP)                        *Push register mode onto the stack
+    BSR     sub_build_direct_string         *Build the address or data register
+    LEA     4(SP),SP
+    
+    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+
+    BRA     sub_process_opcode_types_next   *Go to the next statement
+    
+sub_process_opcode_types_cnt_reg
+    
+    CMP.W   #opf_count_reg,D1               *See if it the count reg
+    BNE     sub_process_opcode_types_ea     *If not must be an ea mode
+    
+    MOVE.W  (A0)+,D1                        *Get determinate to figure out if it's a count or register
+    
+    BTST    D1,D0                           *Check to see if it's a count (0) or register (1)
+    BNE     sub_process_opcode_types_reg_qwk    *It's a register so we'll process it as such
+    
+    MOVE.W  (A0)+,D1                        *Get the immediate count value
+    
+    MOVEM.L D0/D1/D7/A0,-(SP)                  *Backup registers
+    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+    BSR     sub_build_char                  *Output the pound sign
+    LEA     2(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D1/D7/A0                  *Restore the registers
+    
+    MOVEM.L D0/D7/A0,-(SP)                     *Backup registers
+    MOVE.W  D1,-(SP)                        *Put the value to the stack
+    MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
+    MOVE.W  #byte_size,-(SP)                *Print it out as a byte
+    BSR     sub_build_hex_string            *Print out the value
+    LEA     8(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+    
+    MOVE.W  (A0)+,D1                        *Dump a value of A0
+    
+    BRA     sub_process_opcode_types_next
+    
+sub_process_opcode_types_ea
+
+    CLR.L   D1                              *Clear D1 to get address
+    MOVE.W  (A0)+,D1                        *Get the address of acceptable EA modes
+    MOVE.W  (A0)+,D2                        *Mode start bit position
+    MOVE.W  (A0)+,D3                        *Reg start bit position
+    
+    MOVEM.L A0/D0/D7,-(SP)                  *Backup the registers
+    
+    MOVE.L  D1,-(SP)                        *Pass valid address modes address
+    MOVE.W  D2,-(SP)                        *Pass mode starting bit position
+    MOVE.W  D3,-(SP)                        *Register starting bit position
+    MOVE.W  D7,-(SP)                        *Calling operand size
+    BSR     sub_check_ea_string             *Output EA
+    LEA     10(SP),SP                       *Reset the pointer
+    
+    MOVEM.L (SP)+,A0/D0/D7                  *Reset the pointer
+    
+sub_process_opcode_types_next
+
+    MOVE.W  (A0)+,D1                        *Get the next statement
+
+    CMP.W   #opf_term,D1                    *See if this code is done
+    BEQ     sub_process_opcode_rts          *If so we are done
+    
+    CMP.W   #opf_flipped,D1                 *See if it's the flipped
+    BEQ     sub_process_opcode_rts          *If so we are done
+    
+    LEA     4(A0),A0                        *Backup by a word length to process the next type
+    BRA     sub_process_opcode_types        *Go back and get start again
+    
+sub_process_opcode_rts
+    RTS
 
 **************************************************************
 *
@@ -446,18 +626,9 @@ sub_build_op_long_val    DS.W    1
 sub_build_op_word_val    DS.W    1
 sub_build_op_byte_val    DS.W    1
 sub_build_op_position    DS.W    1
-sub_build_op_add         DS.L    1
     ORG *
 
 sub_build_op
-
-    MOVE.L  sub_build_op_add(SP),D2
-    
-    MOVEM.L D0,-(SP)
-    MOVE.L  D2,-(SP)
-    BSR     sub_build_string
-    LEA     4(SP),SP
-    MOVEM.L (SP)+,D0
 
     CMP.B   #no_size,sub_build_op_position(SP)
     BEQ     sub_build_op_print
@@ -787,7 +958,7 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    OR.L    $1234,D5
+    OR.L    D5,$1234
     
     END    START        ; last line of source
 
