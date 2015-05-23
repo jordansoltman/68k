@@ -72,28 +72,34 @@ sub_op_nop
 sub_op_eor
     
     MOVEM.L D0,-(SP)
-    
+    PEA     print_op_eor
+    MOVE.W  #6,-(SP)
+    MOVE.W  #%00,-(SP)
+    MOVE.W  #%01,-(SP)
+    MOVE.W  #%10,-(SP)
+    BSR     sub_build_op
+    LEA     12(SP),SP
     MOVEM.L (SP)+,D0
     
-    MOVEM.L D0,-(SP)                        *Backup D0
+    MOVEM.L D0/D1,-(SP)                        *Backup D0
     MOVE.W  #ea_reg_dir,-(SP)
     MOVE.W  #9,-(SP)
     BSR     sub_build_direct_string
     LEA     4(SP),SP
-    MOVEM.L (SP)+,D0                        *Restore D0
+    MOVEM.L (SP)+,D0/D1                        *Restore D0
     
-    MOVEM.L D0,-(SP) 
+    MOVEM.L D0/D1,-(SP) 
     BSR     sub_build_string_comma_space
-    MOVEM.L (SP)+,D0
+    MOVEM.L (SP)+,D0/D1
     
-    MOVEM.L D0,-(SP)                        *Backup D0
+    MOVEM.L D0/D1,-(SP)                        *Backup D0
     PEA     op_ea_dest_eor
     MOVE.W  #3,-(SP)
     MOVE.W  #0,-(SP)
-    MOVE.W  #long_size,-(SP)    ***UPDATE***
+    MOVE.W  D1,-(SP)
     BSR     sub_check_ea_string
     LEA     10(SP),SP
-    MOVEM.L (SP)+,D0                        *Restore D0
+    MOVEM.L (SP)+,D0/D1                        *Restore D0
     
     BSR     sub_build_finish
     
@@ -232,7 +238,7 @@ sub_build_hex_string_loop
     MOVE.W      D3,D5                                   *Move the byte from D3 to D5
     AND.W       #right_nibble_mask,D5                   *Mask the last nibble in D5
     MOVE.B      (0,A1,D5.W),-(A0)                       *Add remainder to output string
-    LSR.L       #4,D3                                   *Shift our hex value right by two
+    ASR.L       #4,D3                                   *Shift our hex value right by two
     BRA         sub_build_hex_string_loop               *Loop
 sub_build_hex_string_rts
     ADD.W       D4,D0                                   *Add our total displacement
@@ -283,7 +289,7 @@ sub_build_ea_string_addr_long
 sub_build_ea_string_abs_print
     MOVE.W      D3,-(SP)
     BSR         sub_build_next_abs
-    LEA         4(SP),SP
+    LEA         2(SP),SP
     RTS
     
     *Deals with the register cases
@@ -414,6 +420,8 @@ sub_build_direct_string
 * Register Parameters:
 * 1 (L): D0 should contain the current op code
 *
+* Return
+* 1 (W): Size of the operation
 
     OFFSET 4
 sub_build_op_long_val    DS.W    1
@@ -427,12 +435,14 @@ sub_build_op
 
     MOVE.L  sub_build_op_add(SP),D2
     
+    MOVEM.L D0,-(SP)
     MOVE.L  D2,-(SP)
     BSR     sub_build_string
     LEA     4(SP),SP
+    MOVEM.L (SP)+,D0
 
     CMP.B   #no_size,sub_build_op_position(SP)
-    BEQ     sub_build_op_print_op 
+    BEQ     sub_build_op_print
 
     MOVE.W  sub_build_op_position(SP),D1
     
@@ -441,23 +451,32 @@ sub_build_op
     BSR     sub_handy_mask
     LEA     4(SP),SP
     
+    MOVEM.L D1,-(SP)
     MOVE.W  #'.',-(SP)
     BSR     sub_build_char
     LEA     2(SP),SP
+    MOVEM.L (SP)+,D1
     
-    CMP.B   sub_build_op_byte_val(SP),D1
+    MOVE.W  sub_build_op_byte_val(SP),D5
+    MOVE.W  sub_build_op_word_val(SP),D6
+    MOVE.W  sub_build_op_long_val(SP),D7
+    
+    CMP.B   D5,D1
     BNE     sub_build_op_word
     MOVE.B  #'B',D3
+    MOVE.W  #byte_size,D4
     BRA     sub_build_op_print
 sub_build_op_word
-    CMP.B   sub_build_op_word_val(SP),D1
+    CMP.B   D6,D1
     BNE     sub_build_op_long
     MOVE.B  #'W',D3
+    MOVE.W  #word_size,D4
     BRA     sub_build_op_print
 sub_build_op_long
-    CMP.B   sub_build_op_long_val(SP),D1
+    CMP.B   D7,D1
     BNE     sub_build_op_flag_invalid
     MOVE.B  #'L',D3
+    MOVE.W  #long_size,D4
 sub_build_op_print
     MOVE.W  D3,-(SP)
     BSR     sub_build_char
@@ -466,10 +485,11 @@ sub_build_op_rts
     MOVE.W  #TAB,-(SP)
     BSR     sub_build_char
     LEA     2(SP),SP
+    MOVE.W  D4,D1
     RTS
 sub_build_op_flag_invalid   
     MOVE.B  #true,invalid_op_flag
-    RTS
+    BRA     sub_build_op_rts
     
    
     
@@ -634,6 +654,47 @@ ea_term                EQU %1111   *Terminates a list of ea modes
 true      EQU     1
 false     EQU     0
 
+*** opf_ea ***
+* 1) acceptable ea modes address
+* 2) mode start bit position
+* 3) reg start bit position
+opf_ea          EQU     0
+
+*** opf_count ***
+* 1) start bit position
+opf_count       EQU     1
+
+*** opf_reg ***
+* 1) start bit position
+* 2) type (either ea_reg_dir or ea_add_dir)
+opf_reg         EQU     2
+
+*** opf_count_reg ***
+* 1) determinent bit position (where it is determined if it's a count or register)
+* 2) start bit position
+* 3) type (either ea_reg_dir or ea_add_dir)
+opf_count_reg   EQU     3
+
+*** opf_flip ***
+* Determines if A and B can be flipped
+* 1) bit position
+opf_flip        EQU     4
+
+*** opf_sizes ***
+* 1) determinent bit position (starting location where size can be determined)
+* 2) byte representation or no_size
+* 3) word representation or no_size
+* 4) long representation or no_size
+opf_sizes       EQU     5
+
+*** opf_size_only ***
+* 1) size (in byte_size, word_size, long_size)
+opf_size_only   EQU     6
+
+*** opf_sub ***
+* 1) address of the subroutine to use instead
+opf_sub         EQU      7
+
 const_print_space       EQU   ' '
 const_print_hex_sym     EQU   '$'
 const_print_pound_sym   EQU   '#'
@@ -684,7 +745,7 @@ TAB EQU $9
 
     ORG     $3000
     EOR.L   D3,$12345678
-    EOR.W   D0,$ABCD
+    EOR.W   D3,d2
     EOR.L   D1,(A0)+
     
     END    START        ; last line of source
