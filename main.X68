@@ -31,9 +31,20 @@ LOOP
     MOVE.W  D0,D1
     
     MOVE.W  #word_size,-(SP)
-    MOVE.
+    MOVE.W  #true,-(SP)
     BSR     sub_build_next_abs
-    LEA     2(SP),SP
+    LEA     4(SP),SP
+    
+    
+    MOVE.W  #word_size,-(SP)
+    MOVE.W  #true,-(SP)
+    BSR     sub_build_next_abs
+    LEA     4(SP),SP
+    
+    MOVE.W  #word_size,-(SP)
+    MOVE.W  #true,-(SP)
+    BSR     sub_build_next_abs
+    LEA     4(SP),SP
     
     MOVE.L  #$AB,-(SP)
     MOVE.W  #true,-(SP)
@@ -188,6 +199,8 @@ sub_build_hex_string_rts
 * Paremeters:
 * 1 (W): Mode in defined ea_modes_[X]
 * 2 (W): Register 0-7
+* 3 (W): (Optional) Size can be passed in as byte_size, word_size, or long_size
+*        NOTE:  For addresses only word_size or long_size may be used
 
     OFFSET 4
 register    DS.W    1
@@ -195,12 +208,24 @@ mode        DS.W    1
     ORG *
 
 sub_build_ea_string
+    MOVE.W      mode(SP),D1                         *Load mode to D1
+    MOVE.W      register(SP),D2                     *Load register to D2
+    CMP.W       #ea_abs,D1
+    BNE         sub_build_ea_string_reg
+    
+    CMP.W       #ea_imm,D2
+    BEQ         sub_build_ea_string_imm
+    CMP.W       #ea_word,D2
+    BNE         sub_build_ea_string_addr_long
+    
+sub_build_ea_string_addr_long
+sub_build_ea_string_imm
+
+sub_build_ea_string_reg
     MOVEA.L     #output_string,A0                   *Load the output string
     MOVEA.L     #hex_characters,A1                  *Load the hex characters
     MOVE.W      output_string_displacement,D0       *Load current displacement to D0
     ADD.W       D0,A0                               *Adjust the address for the current displacement
-    MOVE.W      mode(SP),D1                         *Load mode to D1
-    MOVE.W      register(SP),D2                     *Load register to D2
     CMP.W       #ea_ari_pre,D1                      *Check if ARI with predecrement
     BNE         sub_build_ea_string_open_paren      *If not go to next step
     MOVE.B      #const_print_minus,(A0)+            *Output minus sign
@@ -252,22 +277,25 @@ sub_build_next_abs_size    DS.W    1
     ORG *
 
 sub_build_next_abs
-    MOVE.W  sub_build_next_abs_size(SP),D1
-    MOVEA.L current_addr,A0
+    MOVE.W  sub_build_next_abs_size(SP),D1              * load size to D1
+    MOVE.W  sub_build_next_abs_imm(SP),D2               * load immediate flag (#true or #false)
+    MOVEA.L current_addr,A0                             * load current address to A0
     
-    CMP.W   #long_size,D1
-    BEQ     sub_build_next_abs_long
-    MOVE.W  (A0)+,D2
+    CMP.W   #long_size,D1                               * compare size to long
+    BEQ     sub_build_next_abs_long                     * branch to special case if true
+    MOVE.W  (A0)+,D3                                    * get next word
     BRA     sub_build_next_abs_print
 sub_build_next_abs_long
-    MOVE.L  (A0)+,D2
+    MOVE.L  (A0)+,D3                                    * get next long
 sub_build_next_abs_print
-    MOVE.L  D2,-(SP)
-    MOVE.W  sub_build_next_abs_imm(SP),-(SP)
-    MOVE.W  D1,-(SP)
-    BSR     sub_build_hex_string
-    LEA     8(SP),SP
-    MOVEA.L A0,current_addr
+    MOVEM.L A0,-(SP)                                    * save current address on the stack
+    MOVE.L  D3,-(SP)                                    * move value (word or long) to stack
+    MOVE.W  D2,-(SP)                                    * move immediate flag (#true or #false) to the stack
+    MOVE.W  D1,-(SP)                                    * move size to the stack
+    BSR     sub_build_hex_string                        * call sub_build_hex_string
+    LEA     8(SP),SP                                    * reset the stack
+    MOVEM.L (SP)+,A0                                    * reload A0 with current address
+    MOVE.L  A0,current_addr                             * set current address to value of A0
     RTS
 
 **************************************************************
@@ -299,8 +327,9 @@ sub_build_direct_string
     
     MOVE.W  sub_build_direct_string_ea(SP),-(SP)    *Give the mode
     MOVE.W  D1,-(SP)                                *Give the register number
+    MOVE.W  #null,-(SP)                             *Push an empty value for size
     BSR     sub_build_ea_string                     *Build the string
-    LEA     4(SP),SP                                *Reset the stack pointer
+    LEA     6(SP),SP                                *Reset the stack pointer
     
     RTS
     
@@ -368,6 +397,7 @@ sub_check_ea_string_abs
 sub_check_ea_string_print    
     MOVE.W  D2,-(SP)                            *Load the mode to the stack
     MOVE.W  D3,-(SP)                            *Load the register to the stack
+    *** PUSH THE SIZE ON HERE ***
     BSR     sub_build_ea_string                 *Build that string
     LEA     4(SP),SP                            *Reset the stack
     BRA     sub_check_ea_string_rts             *Return
@@ -482,6 +512,7 @@ word_size EQU     2
 long_size EQU     4
 
 right_nibble_mask   EQU $000F
+null                EQU 0
 
 ea_reg_dir             EQU %000
 ea_add_dir             EQU %001
@@ -492,7 +523,7 @@ ea_ari_pre             EQU %100
 ea_abs                 EQU %111
 ea_word                EQU %000    *Used in conjunction with abs
 ea_long                EQU %001    *Used in conjunction with abs
-ea_immed               EQU %100    *Used in conjunction with abs
+ea_imm                 EQU %100    *Used in conjunction with abs
 
 ea_term                EQU %1111   *Terminates a list of ea modes
 
@@ -548,6 +579,7 @@ LF EQU $0A
     * TEST PROGRAM *
 
     ORG     $3000
+    ADDI.B  #12,D0
     MOVE.B  #244,D3
     NOP
     EOR.L   D4,(A0)+
