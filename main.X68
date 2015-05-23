@@ -31,7 +31,8 @@ LOOP
     MOVE.W  D0,D1
     
     MOVE.W  #word_size,-(SP)
-    BSR     sub_build_next_addr
+    MOVE.
+    BSR     sub_build_next_abs
     LEA     2(SP),SP
     
     MOVE.L  #$AB,-(SP)
@@ -233,78 +234,40 @@ sub_build_ea_string_reg_num
 sub_build_ea_string_rts
     MOVE.W      D0,output_string_displacement       *Update the displacement for the string
     RTS
-
-**************************************************************
-*
-* sub_build_next_addr
-*
-* Grabs the next address from the 
-*
-* Stack Parameters:
-* 1 (W): Size defined by either word_size or long_size
-*
-
-    OFFSET 4
-sub_build_next_addr_size    DS.W    1
-    ORG *
-
-sub_build_next_addr
-    
-    MOVE.W  sub_build_next_addr_size(SP),D1
-    MOVEA.L current_addr,A0
-    
-    CMP.W   #word_size,D1
-    BNE     sub_build_next_addr_long
-    MOVE.W  (A0)+,D2
-    
-    MOVE.L  D2,-(SP)
-    MOVE.W  #false,-(SP)
-    MOVE.W  #word_size,-(SP)
-    BSR     sub_build_hex_string
-    LEA     8(SP),SP
-    RTS
-    
-sub_build_next_addr_long
-
-    MOVE.L  (A0)+,D2
-    
-    MOVE.L  D2,-(SP)
-    MOVE.W  #false,-(SP)
-    MOVE.W  #long_size,-(SP)
-    BSR     sub_build_hex_string
-    LEA     8(SP),SP
-    RTS
     
 **************************************************************
 *
-* sub_build_next_imm
+* sub_build_next_abs
 *
 * Grabs the next address from the 
 *
 * Stack Parameters:
 * 1 (W): Size defined by either byte_size, word_size or long_size
+* 2 (W): Is immediate? pass #true or #false
 *
 
     OFFSET 4
-sub_build_next_imm_size    DS.W    1
+sub_build_next_abs_imm     DS.W    1
+sub_build_next_abs_size    DS.W    1
     ORG *
 
-sub_build_next_imm
-    MOVE.W  sub_build_next_imm_size(SP),D1
+sub_build_next_abs
+    MOVE.W  sub_build_next_abs_size(SP),D1
     MOVEA.L current_addr,A0
     
     CMP.W   #long_size,D1
-    BEQ     sub_build_next_imm_long
+    BEQ     sub_build_next_abs_long
     MOVE.W  (A0)+,D2
-    BRA     sub_build_next_imm_print
-sub_build_next_imm_long
+    BRA     sub_build_next_abs_print
+sub_build_next_abs_long
     MOVE.L  (A0)+,D2
-sub_build_next_imm_print
+sub_build_next_abs_print
     MOVE.L  D2,-(SP)
-    MOVE.W  #true,-(SP)
+    MOVE.W  sub_build_next_abs_imm(SP),-(SP)
     MOVE.W  D1,-(SP)
     BSR     sub_build_hex_string
     LEA     8(SP),SP
+    MOVEA.L A0,current_addr
     RTS
 
 **************************************************************
