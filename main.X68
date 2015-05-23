@@ -33,6 +33,9 @@ LOOP
     MOVE.W  (A0)+,D0                        *Move the current data to D0
     MOVE.L  A0,current_addr                 *Update the current address
     MOVE.W  D0,D1    
+    
+    BSR     sub_build_current_line_address
+    
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_nop+op_value,D1         *See if the values are equal
@@ -137,11 +140,37 @@ sub_build_finish
 * Puts a null character at the end
 *
 sub_build_current_line_address
+    MOVE.L      current_addr_backup,-(SP)
+    MOVE.W      #false,-(SP)
+    MOVE.W      #word_size,-(SP)
+    BSR         sub_build_hex_string
+    LEA         8(SP),SP
+    
+    MOVE.W      #TAB,-(SP)
+    BSR         sub_build_char
+    LEA         2(SP),SP
+    
+    RTS
+    
+**************************************************************
+*
+* sub_build_char
+*
+* Add
+*
+    OFFSET 4
+sub_build_char_ascii DS.W    1
+    ORG *
+
+sub_build_char
     MOVEA.L     #output_string,A0               *Load the output string
     MOVE.W      output_string_displacement,D0   *Load current displacement to D0
     ADD.W       D0,A0                           *Adjust the address for the current displacement
-    
-    
+    MOVE.W      sub_build_char_ascii(SP),D1
+    MOVE.B      D1,(A0)+
+    ADDQ.W      #byte_size,D0
+    MOVE.W      D0,output_string_displacement
+    RTS    
 
 **************************************************************
 *
@@ -195,10 +224,11 @@ sub_build_hex_string
     MOVE.W      sub_build_hex_string_hex_flag(SP),D2    *Get immediate boolean and save in D2
     MOVE.L      sub_build_hex_string_value(SP),D3       *Get the value and save in D3
     CMP.B       #false,D2                               *See if we are printing a $ symbol
-    BEQ         sub_build_hex_string_loop               *Skip printing the hex sign if immediate is set false
+    BEQ         sub_build_hex_string_move_ptr           *Skip printing the hex sign if immediate is set false
 sub_build_hex_string_hex
-    MOVE.B      #const_print_hex_sym,(A0)+              *Add in the $ symbol for hex
+    MOVE.B      #'$',(A0)+                              *Add in the $ symbol for hex
     ADDQ.W      #byte_size,D0                           *Add one to displacement counter
+sub_build_hex_string_move_ptr    
     ADDA.W      D1,A0                                   *increment the pointer by the number size
 sub_build_hex_string_loop
     CMP.W       #0,D1                                   *See if we are done
@@ -580,7 +610,7 @@ const_print_d           EQU   'D'
 
 ******* STORAGE **********
 
-output_string               DS.B    40
+output_string               DS.B    50
 output_string_displacement  DS.W    1
 current_addr                DS.L    1
 current_addr_backup         DS.L    1
@@ -605,16 +635,13 @@ op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
 op_code_eor     DC.W    $B100,$F100
 
-print_op_nop    DC.B    'NOP ',0
-print_op_data   DC.B    'DATA ',0
+print_op_nop    DC.B    'NOP',0
+print_op_data   DC.B    'DATA',0
 print_op_eor    DC.B    'EOR',0
-
-print_size_long DC.B    'L',$9,0
-print_size_word DC.B    'W ',0
-print_size_byte DC.B    'B ',0
 
 CR EQU $0D
 LF EQU $0A
+TAB EQU $9
 
 
     * TEST PROGRAM * *BB88 eor bad*
