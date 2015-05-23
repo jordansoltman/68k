@@ -34,7 +34,9 @@ LOOP
     MOVE.L  A0,current_addr                 *Update the current address
     MOVE.W  D0,D1    
     
+    MOVEM.L D0,-(SP)
     BSR     sub_build_current_line_address
+    MOVEM.L (SP)+,D0
     
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
@@ -68,16 +70,9 @@ sub_op_nop
     RTS
     
 sub_op_eor
-    MOVEM.L D0,-(SP)                        *Backup D0
-    PEA     print_op_eor                    *Load print eor string
-    BSR     sub_build_string                *Print it out to our output string
-    LEA     4(SP),SP                        *Move our stack pointer back
-    MOVEM.L (SP)+,D0                        *Restore D0
     
     MOVEM.L D0,-(SP)
-    MOVE.W  #long_size,-(SP)
-    BSR     sub_build_instr_size
-    LEA     2(SP),SP
+    
     MOVEM.L (SP)+,D0
     
     MOVEM.L D0,-(SP)                        *Backup D0
@@ -262,30 +257,37 @@ sub_build_ea_string_mode        DS.W    1
     ORG *
 
 sub_build_ea_string
-    MOVE.W      sub_build_ea_string_mode(SP),D1                         *Load mode to D1
-    MOVE.W      sub_build_ea_string_register(SP),D2                     *Load register to D2
-    MOVE.W      sub_build_ea_string_size(SP),D3
-    CMP.W       #ea_abs,D1
-    BNE         sub_build_ea_string_reg
+    MOVE.W      sub_build_ea_string_mode(SP),D1     *Load mode to D1
+    MOVE.W      sub_build_ea_string_register(SP),D2 *Load register to D2
+    MOVE.W      sub_build_ea_string_size(SP),D3     *Load size to D3
+    CMP.W       #ea_abs,D1                          *See if the current mode is abs addressing
+    BNE         sub_build_ea_string_reg             *If not it's a register
     
-    CMP.W       #ea_imm,D2
-    BEQ         sub_build_ea_string_immediate
-    CMP.W       #ea_word,D2
-    BNE         sub_build_ea_string_addr_long
-    MOVE.W      #word_size,-(SP)
-    BRA         sub_build_ea_string_addr
-sub_build_ea_string_addr_long
-    MOVE.W      #long_size,-(SP)
-sub_build_ea_string_addr 
-    MOVE.W      #false,-(SP)
-    BRA         sub_build_ea_string_abs_print
+    *Deals with the immediate/absolute cases
+    
+    CMP.W       #ea_imm,D2                          *See if it's an immediate value
+    BEQ         sub_build_ea_string_immediate       *If so go to print that
+    CMP.W       #ea_word,D2                         *Otherwise we are printing an address, check if a word
+    BNE         sub_build_ea_string_addr_long       *If not word it must be a long address
+    MOVE.W      #word_size,D3                       *Setup for word_size printing
+    BRA         sub_build_ea_string_abs_print       *Branch to print address
 sub_build_ea_string_immediate
-    MOVE.W      D3,-(SP)
-    MOVE.W      #true,-(SP)
+    MOVEM.L     D3,-(SP)
+    MOVE.W      #'#',-(SP)
+    BSR         sub_build_char
+    LEA         2(SP),SP
+    MOVEM.L     (SP)+,D3
+    BRA         sub_build_ea_string_abs_print
+sub_build_ea_string_addr_long
+    MOVE.W      #long_size,D3                       *Setup for long_size printing
 sub_build_ea_string_abs_print
+    MOVE.W      D3,-(SP)
     BSR         sub_build_next_abs
     LEA         4(SP),SP
     RTS
+    
+    *Deals with the register cases
+    
 sub_build_ea_string_reg
     MOVEA.L     #output_string,A0                   *Load the output string
     MOVEA.L     #hex_characters,A1                  *Load the hex characters
@@ -333,17 +335,14 @@ sub_build_ea_string_rts
 *
 * Stack Parameters:
 * 1 (W): Size defined by either byte_size, word_size or long_size
-* 2 (W): Is immediate? pass #true or #false
 *
 
     OFFSET 4
-sub_build_next_abs_imm     DS.W    1
 sub_build_next_abs_size    DS.W    1
     ORG *
 
 sub_build_next_abs
     MOVE.W  sub_build_next_abs_size(SP),D1              * load size to D1
-    MOVE.W  sub_build_next_abs_imm(SP),D2               * load immediate flag (#true or #false)
     MOVEA.L current_addr,A0                             * load current address to A0
     
     CMP.W   #long_size,D1                               * compare size to long
@@ -355,7 +354,7 @@ sub_build_next_abs_long
 sub_build_next_abs_print
     MOVEM.L A0,-(SP)                                    * save current address on the stack
     MOVE.L  D3,-(SP)                                    * move value (word or long) to stack
-    MOVE.W  D2,-(SP)                                    * move immediate flag (#true or #false) to the stack
+    MOVE.W  #true,-(SP)                                 * Always true becuase we always want to print the $ symbol
     MOVE.W  D1,-(SP)                                    * move size to the stack
     BSR     sub_build_hex_string                        * call sub_build_hex_string
     LEA     8(SP),SP                                    * reset the stack
@@ -397,6 +396,82 @@ sub_build_direct_string
     LEA     6(SP),SP                                *Reset the stack pointer
     
     RTS
+    
+    
+**************************************************************
+*
+* sub_build_op
+*
+* Adds an EA to the string
+*
+* Stack Parameters:
+* 1 (L): Opcode string address
+* 2 (W): Bit position for size
+* 3 (W): Byte value
+* 4 (W): Word value
+* 5 (W): Long value
+*
+* Register Parameters:
+* 1 (L): D0 should contain the current op code
+*
+
+    OFFSET 4
+sub_build_op_long_val    DS.W    1
+sub_build_op_word_val    DS.W    1
+sub_build_op_byte_val    DS.W    1
+sub_build_op_position    DS.W    1
+sub_build_op_add         DS.L    1
+    ORG *
+
+sub_build_op
+
+    MOVE.L  sub_build_op_add(SP),D2
+    
+    MOVE.L  D2,-(SP)
+    BSR     sub_build_string
+    LEA     4(SP),SP
+
+    CMP.B   #no_size,sub_build_op_position(SP)
+    BEQ     sub_build_op_print_op 
+
+    MOVE.W  sub_build_op_position(SP),D1
+    
+    MOVE.W  D1,-(SP)
+    MOVE.W  #2,-(SP)
+    BSR     sub_handy_mask
+    LEA     4(SP),SP
+    
+    MOVE.W  #'.',-(SP)
+    BSR     sub_build_char
+    LEA     2(SP),SP
+    
+    CMP.B   sub_build_op_byte_val(SP),D1
+    BNE     sub_build_op_word
+    MOVE.B  #'B',D3
+    BRA     sub_build_op_print
+sub_build_op_word
+    CMP.B   sub_build_op_word_val(SP),D1
+    BNE     sub_build_op_long
+    MOVE.B  #'W',D3
+    BRA     sub_build_op_print
+sub_build_op_long
+    CMP.B   sub_build_op_long_val(SP),D1
+    BNE     sub_build_op_flag_invalid
+    MOVE.B  #'L',D3
+sub_build_op_print
+    MOVE.W  D3,-(SP)
+    BSR     sub_build_char
+    LEA     2(SP),SP    
+sub_build_op_rts
+    MOVE.W  #TAB,-(SP)
+    BSR     sub_build_char
+    LEA     2(SP),SP
+    RTS
+sub_build_op_flag_invalid   
+    MOVE.B  #true,invalid_op_flag
+    RTS
+    
+   
     
 **************************************************************
 *
@@ -474,46 +549,6 @@ sub_check_ea_string_not_found
 sub_check_ea_string_rts
     RTS
 
-    
-
-**************************************************************
-*
-* sub_build_instr_size
-*
-* Adds a period, the size and a space: ".S " where S is size
-*
-* Stack Parameters:
-* 1 (W): Size should be either #byte_size, #word_size, or #long_size
-
-    OFFSET 4
-size    DS.W    1
-    ORG *
-
-sub_build_instr_size
-    MOVEA.L     #output_string,A0                   *Load the output string
-    MOVEA.L     #hex_characters,A1                  *Load the hex characters
-    MOVE.W      output_string_displacement,D0       *Load current displacement to D0
-    ADD.W       D0,A0                               *Adjust the address for the current displacement
-    MOVE.W      size(SP),D1                         *Load the size into D1
-    MOVE.B      #'.',(A0)+                          *First add a period "OPCODE."
-    ADDQ.W      #1,D0                               *Increase the displacement by one
-    CMP.W       #byte_size,D1                       *See if it's a byte
-    BNE         sub_build_instr_size_word           *If it's not a byte check a word
-    MOVE.B      #'B',(A0)+                          *Add a 'B' to our string
-    BRA         sub_build_instr_size_rts            *Branch to the return
-sub_build_instr_size_word
-    CMP.W       #word_size,D1                       *See if it's a word
-    BNE         sub_build_instr_size_long           *If not it's a long
-    MOVE.B      #'W',(A0)+                          *Add a 'W' to our string
-    BRA         sub_build_instr_size_rts            *Branch to the return
-sub_build_instr_size_long
-    MOVE.B      #'L',(A0)+                          *Move an 'L' to our string
-sub_build_instr_size_rts
-    MOVE.B      #' ',(A0)+                          *Add the final space
-    ADDQ.W      #2,D0                               *Increase the displacement by two because we added a B, W or L and space
-    MOVE.W      D0,output_string_displacement       *Save the updated displacement
-    RTS
-
 **************************************************************
 *
 * sub_build_string_comma_space
@@ -578,6 +613,7 @@ sub_handy_mask_done
 byte_size EQU     1
 word_size EQU     2
 long_size EQU     4
+no_size   EQU     $F
 
 right_nibble_mask   EQU $000F
 null                EQU 0
@@ -647,7 +683,6 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-*tst DC.W    $BB88
     EOR.L   D3,$12345678
     EOR.W   D0,$ABCD
     EOR.L   D1,(A0)+
