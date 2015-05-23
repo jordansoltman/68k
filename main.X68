@@ -654,6 +654,19 @@ ea_term                EQU %1111   *Terminates a list of ea modes
 true      EQU     1
 false     EQU     0
 
+*** opf definitions ***
+* label [op name string address],[size],[optional: [flip bit]],[type],[optional: [type]],[optional: opf_flipped],[optional: [type]],[optional: [type]]
+*
+* [size] =
+* opf_size [byte_size | word_size | long_size]
+* OR
+* opf_sizes [size bit pos],[byte size rep | no_size], [word size rep | no_size], [long size rep | no_size]
+*
+* [flip bit] =
+* opf_flip  [bit position of indicator]
+*
+* [type] =
+
 *** opf_ea ***
 * 1) acceptable ea modes address
 * 2) mode start bit position
@@ -680,20 +693,24 @@ opf_count_reg   EQU     3
 * 1) bit position
 opf_flip        EQU     4
 
+opf_flipped     EQU     5
+
 *** opf_sizes ***
 * 1) determinent bit position (starting location where size can be determined)
 * 2) byte representation or no_size
 * 3) word representation or no_size
 * 4) long representation or no_size
-opf_sizes       EQU     5
+opf_sizes       EQU     6
 
 *** opf_size_only ***
 * 1) size (in byte_size, word_size, long_size)
-opf_size_only   EQU     6
+opf_size        EQU     7
 
 *** opf_sub ***
 * 1) address of the subroutine to use instead
-opf_sub         EQU      7
+opf_sub         EQU      8
+
+opf_term        EQU      9
 
 const_print_space       EQU   ' '
 const_print_hex_sym     EQU   '$'
@@ -726,15 +743,20 @@ print_blank         DC.B    0
 
 op_ea_dest_eor   DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 
+op_ea_or_src     DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+
 ************** OP CODE MASKS AND VALUES ***************
 
 op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
 op_code_eor     DC.W    $B100,$F100
+op_code_or      DC.W    $8000,$F000,
 
-print_op_nop    DC.B    'NOP',0
-print_op_data   DC.B    'DATA',0
-print_op_eor    DC.B    'EOR',0
+op_string_nop    DC.B    'NOP',0
+op_string_data   DC.B    'DATA',0
+op_string_eor    DC.B    'EOR',0
+
 
 CR EQU $0D
 LF EQU $0A
