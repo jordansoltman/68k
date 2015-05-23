@@ -23,14 +23,22 @@ START                                       ; first instruction of program
 
 LOOP
     MOVEA.L current_addr,A0                 *Load the current address
-    CMP.L   #end_addr,A0                           *Compare to our starting and ending
+    CMP.L   #end_addr,A0                    *Compare to our starting and ending
     BGE     DONE                            *Check if done
     CLR.W   output_string_displacement      *Clear the current word
     MOVE.W  (A0)+,D0                        *Move the current data to D0
     MOVE.L  A0,current_addr                 *Update the current address
     MOVE.W  D0,D1
     
-    MOVE
+    MOVE.W  #word_size,-(SP)
+    BSR     sub_build_next_addr
+    LEA     2(SP),SP
+    
+    MOVE.L  #$AB,-(SP)
+    MOVE.W  #true,-(SP)
+    MOVE.W  #byte_size,-(SP)
+    BSR     sub_build_hex_string
+    LEA     8(SP),SP
     
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
@@ -160,10 +168,10 @@ sub_build_hex_string_loop
     CMP.W       #0,D1                               *See if we are done
     BEQ         sub_build_hex_string_rts            *Exit the subroutine
     SUBQ.W      #1,D1                               *Decrease our counter by one
-    DIVU.W      #16,D3                              *Divide by 16 to get LSB
-    SWAP        D3                                  *Swap to put remainder in right word
-    MOVE.B      (0,A1,D3.W),-(A0)                   *Add remainder to output string
-    SWAP        D3                                  *Swap back to divide again
+    MOVE.W      D3,D5                               *Move the byte from D3 to D5
+    AND.W       #right_nibble_mask,D5               *Mask the last nibble in D5
+    MOVE.B      (0,A1,D5.W),-(A0)                   *Add remainder to output string
+    LSR.L       #4,D3                               *Shift our hex value right by two
     BRA         sub_build_hex_string_loop           *Loop
 sub_build_hex_string_rts
     ADD.W       D4,D0                               *Add our total displacement
@@ -267,6 +275,37 @@ sub_build_next_addr_long
     LEA     8(SP),SP
     RTS
     
+**************************************************************
+*
+* sub_build_next_imm
+*
+* Grabs the next address from the 
+*
+* Stack Parameters:
+* 1 (W): Size defined by either byte_size, word_size or long_size
+*
+
+    OFFSET 4
+sub_build_next_imm_size    DS.W    1
+    ORG *
+
+sub_build_next_imm
+    MOVE.W  sub_build_next_imm_size(SP),D1
+    MOVEA.L current_addr,A0
+    
+    CMP.W   #long_size,D1
+    BEQ     sub_build_next_imm_long
+    MOVE.W  (A0)+,D2
+    BRA     sub_build_next_imm_print
+sub_build_next_imm_long
+    MOVE.L  (A0)+,D2
+sub_build_next_imm_print
+    MOVE.L  D2,-(SP)
+    MOVE.W  #true,-(SP)
+    MOVE.W  D1,-(SP)
+    BSR     sub_build_hex_string
+    LEA     8(SP),SP
+    RTS
 
 **************************************************************
 *
@@ -479,6 +518,8 @@ byte_size EQU     1
 word_size EQU     2
 long_size EQU     4
 
+right_nibble_mask   EQU $000F
+
 ea_reg_dir             EQU %000
 ea_add_dir             EQU %001
 ea_ari                 EQU %010
@@ -546,6 +587,8 @@ LF EQU $0A
     ORG     $3000
     MOVE.B  #244,D3
     NOP
+    EOR.L   D4,(A0)+
+    MOVEA.L A4,A2
 
     END    START        ; last line of source
 
