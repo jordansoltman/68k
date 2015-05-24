@@ -973,7 +973,8 @@ print_blank         DC.B    0
 
 op_codes        DC.W    op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2
 op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
-op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,0
+op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_add1
+op_codes3       DC.W    op_code_add2,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1059,6 +1060,24 @@ op_ea_sub_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_l
 op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_sub_dest,3,0,opf_reg,9,ea_reg_dir,opf_flipped
 op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_sub_dest,3,0,opf_term
 
+op_string_cmp   DC.B    'CMP',0
+op_code_cmp     DC.W    $B000,$F100,op_def_cmp
+op_ea_cmp_src   DC.B    ea_all
+op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_cmp_src,3,0,opf_reg,9,ea_reg_dir,opf_term
+
+op_string_muls  DC.B    'MULS',0
+op_code_muls    DC.W    $C000,$F000,op_def_muls
+op_ea_muls_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_muls     DC.W    op_string_muls,opf_size,word_size,opf_ea,op_ea_muls_src,3,0,opf_reg,9,ea_reg_dir,opf_term     
+
+op_string_add   DC.B    'ADD',0
+op_code_add1    DC.W    $D100,$F0C0,op_def_add
+op_code_add2    DC.W    $D000,$F0C0,op_def_add
+op_ea_add_src   DC.B    ea_all
+op_ea_add_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_add      DC.W    op_string_add,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_add_dest,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+op_def_add_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_add_dest,3,0,opf_term
+
 CR EQU $0D
 LF EQU $0A
 TAB EQU $9
@@ -1069,8 +1088,11 @@ TAB EQU $9
     ORG     $3000
     SUBQ.W  #4,A0
     ORI.W   #$1234,D4
+    ADD.W   D2,D1
     SUB.W   $1233,D3
+    MULS    $1233,D1
     DIVS    #$12,D1
+    CMP.W   A0,D1
     RTS
     JSR     (A0)
     JSR     $1234
