@@ -25,29 +25,27 @@ START                                       ; first instruction of program
     MOVE.L  #srt_addr,current_addr          *Load the starting address
 
 LOOP
-    MOVE.L  current_addr,current_addr_backup *Creates a backup of the address
-    MOVEA.L current_addr,A0                 *Load the current address
-    CMP.L   #end_addr,A0                    *Compare to our starting and ending
-    BGE     DONE                            *Check if done
-    CLR.W   output_string_displacement      *Clear the current word
-    CLR.B   invalid_op_flag                 *Clear the invalid flag
-    MOVE.W  (A0)+,D0                        *Move the current data to D0
-    MOVE.L  A0,current_addr                 *Update the current address
-    MOVE.W  D0,D1    
+    MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
+    MOVEA.L current_addr,A0                     *Load the current address
+    CMP.L   #end_addr,A0                        *Compare to our starting and ending
+    BGE     DONE                                *Check if done
+    CLR.W   output_string_displacement          *Clear the current word
+    CLR.B   invalid_op_flag                     *Clear the invalid flag
+    MOVE.W  (A0)+,D0                            *Move the current data to D0
+    MOVE.L  A0,current_addr                     *Update the current address
     
     MOVEM.L D0,-(SP)
     BSR     sub_build_current_line_address
     MOVEM.L (SP)+,D0
-    MOVE.W  D0,D1    
     
-CHECK_NOP
-    AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
-    CMP.W   op_code_nop+op_value,D1         *See if the values are equal
-    BNE     CHECK_EOR
-    BSR     sub_op_nop                      *If it's a match then we'll go to the OP_NOP routine
-    BRA     OUTPUT
-CHECK_EOR
-    MOVE.W  D0,D1
+    MOVEA.L op_codes,A1
+    
+LOOP_OPCODES
+
+    MOVE.W  D0,D1                               *Copy for masking                                  
+    
+    
+    
     AND.W   op_code_eor+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_eor+op_value,D1         *See if the values are equal
     BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
@@ -160,7 +158,7 @@ sub_process_opcode_tab
     BEQ     sub_process_opcode_rts          *If so we are done
     
     CMP.W   #opf_flip,D1                    *See if the flip bit is set
-    BNE     sub_process_opcode_types        *If not we'll skip to types
+    BNE     sub_process_opcode_back_types   *If not we'll skip to types
     
     MOVE.W  (A0)+,D1                        *Get the determinate bit position
     BTST    D1,D0                           *Test to see if the flip bit is set
@@ -168,10 +166,16 @@ sub_process_opcode_tab
     
 sub_process_opcode_flip_loop
     CMP.W   #opf_flipped,(A0)+              *Get next bit and increment by one
-    BEQ     sub_process_opcode_types        *If we are at the opf_flipped bit we are done and ready to output
-    BRA     sub_process_opcode_flip_loop    *Otherwise let's loop again
+    BEQ     sub_process_opcode_types
+    BRA     sub_process_opcode_flip_loop    *If we are at the opf_flipped bit we are done and ready to output
+
+sub_process_opcode_back_types
+
+    LEA     -2(A0),A0                       *Backup by one
     
 sub_process_opcode_types
+
+    MOVE.W  (A0)+,D1
    
     CMP.W   #opf_count,D1                   *See if we are passing in a count
     BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
@@ -278,8 +282,8 @@ sub_process_opcode_types_next
     MOVEM.L A0/D0/D7,-(SP)
     BSR     sub_build_string_comma_space
     MOVEM.L (SP)+,A0/D0/D7
-    
-    BRA     sub_process_opcode_types        *Go back and get start again
+   
+    BRA     sub_process_opcode_back_types   *Go back and get start again
     
 sub_process_opcode_rts
     BSR     sub_build_finish                *Put the terminating character on the string
@@ -889,6 +893,8 @@ hex_characters  DC.B    '0123456789ABCDEF'
 print_blank         DC.B    0
 
 
+op_codes        DC.W    op_code_eor,op_code_or,0
+
 *Value first, mask second
 
 ********** OP CODE EFFECTIVE ADDRESS MODES ************
@@ -925,14 +931,15 @@ TAB EQU $9
     EOR.L   D5,$2345
     EOR.W   D5,(A0)
     EOR.B   D1,(A0)+
-*    OR.L    D5,$1234
-*    OR.W    D5,$1234
-*    OR.B    D1,$1234
-*    OR.L    $1234,D5
-*    OR.W    D7,(A0)+
-*    OR.B    D7,-(A3)
+    OR.L    D5,$1234
+    OR.W    D5,$1234
+    OR.B    D1,$1234
+    OR.L    $1234,D5
+    OR.W    D7,(A0)+
+    OR.B    D7,-(A3)
     
     END    START        ; last line of source
+
 
 
 
