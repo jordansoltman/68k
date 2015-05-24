@@ -12,7 +12,7 @@
     ORG    $1000
     
 srt_addr  EQU     $3000
-end_addr  EQU     $3010
+end_addr  EQU     $3020
     
     OFFSET  0
 op_value   DS.W    1
@@ -43,15 +43,15 @@ LOOP
 CHECK_NOP
     AND.W   op_code_nop+op_mask,D1          *And against the first bitmask
     CMP.W   op_code_nop+op_value,D1         *See if the values are equal
-    BNE     CHECK_OR
+    BNE     CHECK_EOR
     BSR     sub_op_nop                      *If it's a match then we'll go to the OP_NOP routine
     BRA     OUTPUT
-CHECK_OR
+CHECK_EOR
     MOVE.W  D0,D1
-    AND.W   op_code_or+op_mask,D1          *And against the first bitmask
-    CMP.W   op_code_or+op_value,D1         *See if the values are equal
+    AND.W   op_code_eor+op_mask,D1          *And against the first bitmask
+    CMP.W   op_code_eor+op_value,D1         *See if the values are equal
     BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
-    MOVEA.W op_code_or+op_def,A1
+    MOVEA.W op_code_eor+op_def,A1
     PEA     (A1)
     BSR     sub_process_opcode
     LEA     2(SP),SP
@@ -74,42 +74,6 @@ sub_op_nop
     *LEA     4(SP),SP
     RTS
     
-sub_op_eor
-    
-    MOVEM.L D0,-(SP)
-    *PEA     print_op_eor
-    MOVE.W  #6,-(SP)
-    MOVE.W  #%00,-(SP)
-    MOVE.W  #%01,-(SP)
-    MOVE.W  #%10,-(SP)
-    BSR     sub_build_op
-    LEA     12(SP),SP
-    MOVEM.L (SP)+,D0
-    
-    MOVEM.L D0/D1,-(SP)                        *Backup D0
-    MOVE.W  #ea_reg_dir,-(SP)
-    MOVE.W  #9,-(SP)
-    BSR     sub_build_direct_string
-    LEA     4(SP),SP
-    MOVEM.L (SP)+,D0/D1                        *Restore D0
-    
-    MOVEM.L D0/D1,-(SP) 
-    BSR     sub_build_string_comma_space
-    MOVEM.L (SP)+,D0/D1
-    
-    MOVEM.L D0/D1,-(SP)                        *Backup D0
-    PEA     op_ea_dest_eor
-    MOVE.W  #3,-(SP)
-    MOVE.W  #0,-(SP)
-    MOVE.W  D1,-(SP)
-    BSR     sub_check_ea_string
-    LEA     10(SP),SP
-    MOVEM.L (SP)+,D0/D1                        *Restore D0
-    
-    BSR     sub_build_finish
-    
-    RTS
-
 sub_op_data
     LEA     print_blank,A1
     MOVEQ   #14,D0
@@ -208,8 +172,6 @@ sub_process_opcode_flip_loop
     BRA     sub_process_opcode_flip_loop    *Otherwise let's loop again
     
 sub_process_opcode_types
-
-    MOVE.W  (A0)+,D1                        *Get the next keyword
    
     CMP.W   #opf_count,D1                   *See if we are passing in a count
     BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
@@ -242,14 +204,14 @@ sub_process_opcode_types_reg
 sub_process_opcode_types_reg_qwk               *Quick access to reg
     
     MOVE.W  (A0)+,D1                        *Get starting bit position
-    MOVE.W  (A0)+,D2                        *Get register mode (ea_mode_reg | ea_mode_addr)
+    MOVE.W  (A0)+,D2                        *Get register mode (ea_reg_dir | ea_add_dir)
     
     MOVEM.L D0/D7/A0,-(SP)                     *Backup the registers
     
-    MOVE.W  D2,-(SP)                        *Push mode onto the stack
-    MOVE.W  D1,-(SP)                        *Push register mode onto the stack
+    MOVE.W  D2,-(SP)                        *Push mode bit position onto the stack
+    MOVE.W  D1,-(SP)                        *Push register bit position onto the stack
     BSR     sub_build_direct_string         *Build the address or data register
-    LEA     4(SP),SP
+    LEA     4(SP),SP                        *Reset the stack pointer
     
     MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
 
@@ -313,10 +275,14 @@ sub_process_opcode_types_next
     CMP.W   #opf_flipped,D1                 *See if it's the flipped
     BEQ     sub_process_opcode_rts          *If so we are done
     
-    LEA     4(A0),A0                        *Backup by a word length to process the next type
+    MOVEM.L A0/D0/D7,-(SP)
+    BSR     sub_build_string_comma_space
+    MOVEM.L (SP)+,A0/D0/D7
+    
     BRA     sub_process_opcode_types        *Go back and get start again
     
 sub_process_opcode_rts
+    BSR     sub_build_finish                *Put the terminating character on the string
     RTS
 
 **************************************************************
@@ -671,9 +637,6 @@ sub_build_op_print
     BSR     sub_build_char
     LEA     2(SP),SP    
 sub_build_op_rts
-    MOVE.W  #TAB,-(SP)
-    BSR     sub_build_char
-    LEA     2(SP),SP
     MOVE.W  D4,D1
     RTS
 sub_build_op_flag_invalid   
@@ -930,7 +893,7 @@ print_blank         DC.B    0
 
 ********** OP CODE EFFECTIVE ADDRESS MODES ************
 
-op_ea_dest_eor   DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_ea_eor_dest   DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 
 op_ea_or_src     DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
@@ -939,10 +902,11 @@ op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_
 
 op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
-op_code_eor     DC.W    $B100,$F100
+op_code_eor     DC.W    $B100,$F100,op_def_eor
 op_code_or      DC.W    $8000,$F000,op_def_or
 
 op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
+op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
 
 op_string_nop    DC.B    'NOP',0
 op_string_data   DC.B    'DATA',0
@@ -958,7 +922,15 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    OR.L    D5,$1234
+    EOR.L   D5,$2345
+    EOR.W   D5,(A0)
+    EOR.B   D1,(A0)+
+*    OR.L    D5,$1234
+*    OR.W    D5,$1234
+*    OR.B    D1,$1234
+*    OR.L    $1234,D5
+*    OR.W    D7,(A0)+
+*    OR.B    D7,-(A3)
     
     END    START        ; last line of source
 
