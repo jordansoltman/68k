@@ -207,7 +207,7 @@ sub_process_opcode_types_reg_qwk               *Quick access to reg
 sub_process_opcode_types_cnt_reg
     
     CMP.W   #opf_count_reg,D1               *See if it the count reg
-    BNE     sub_process_opcode_types_ea     *If not must be an ea mode
+    BNE     sub_process_opcode_types_imm    *If not check immediate
     
     MOVE.W  (A0)+,D1                        *Get determinate to figure out if it's a count or register
     
@@ -216,22 +216,43 @@ sub_process_opcode_types_cnt_reg
     
     MOVE.W  (A0)+,D1                        *Get the immediate count value
     
-    MOVEM.L D0/D1/D7/A0,-(SP)                  *Backup registers
+    MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
     MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
     BSR     sub_build_char                  *Output the pound sign
     LEA     2(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D1/D7/A0                  *Restore the registers
+    MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
     
-    MOVEM.L D0/D7/A0,-(SP)                     *Backup registers
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
     MOVE.W  D1,-(SP)                        *Put the value to the stack
     MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
     MOVE.W  #byte_size,-(SP)                *Print it out as a byte
     BSR     sub_build_hex_string            *Print out the value
     LEA     8(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
     
     MOVE.W  (A0)+,D1                        *Dump a value of A0
     
+    BRA     sub_process_opcode_types_next
+    
+sub_process_opcode_types_imm
+    
+    CMP.W   #opf_imm,D1                     *See if it the count reg
+    BNE     sub_process_opcode_types_ea     *If not must be an ea mode
+    
+    MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
+    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+    BSR     sub_build_char                  *Output the pound sign
+    LEA     2(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
+    
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
+    MOVE.W  D1,-(SP)                        *Put the value to the stack
+    MOVE.W  #true,-(SP)                     *Don't print the hex char because we are going to be <= 8
+    MOVE.W  D7,-(SP)                        *Print it out
+    BSR     sub_build_hex_string            *Print out the value
+    LEA     8(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+
     BRA     sub_process_opcode_types_next
     
 sub_process_opcode_types_ea
@@ -849,6 +870,8 @@ ea_all              EQU %1110   *Declares that all ea modes are accepted
 *** opf definitions ***
 * label [op name string address],{[size],[flip bit],[type],[type],opf_flipped,[type],[type],}[opf_term]
 *
+*   add opf_imm
+*
 * [size] =
 * opf_size [byte_size | word_size | long_size]
 * OR
@@ -880,29 +903,31 @@ opf_reg         EQU     2
 * 3) type (either ea_reg_dir or ea_add_dir)
 opf_count_reg   EQU     3
 
+opf_imm         EQU     4
+
 *** opf_flip ***
 * Determines if A and B can be flipped
 * 1) bit position
-opf_flip        EQU     4
+opf_flip        EQU     5
 
-opf_flipped     EQU     5
+opf_flipped     EQU     6
 
 *** opf_sizes ***
 * 1) determinent bit position (starting location where size can be determined)
 * 2) byte representation or no_size
 * 3) word representation or no_size
 * 4) long representation or no_size
-opf_sizes       EQU     6
+opf_sizes       EQU     7
 
 *** opf_size_only ***
 * 1) size (in byte_size, word_size, long_size)
-opf_size        EQU     7
+opf_size        EQU     8
 
 *** opf_sub ***
 * 1) address of the subroutine to use instead
-opf_sub         EQU      8
+opf_sub         EQU      9
 
-opf_term        EQU      9
+opf_term        EQU      10
 
 const_print_space       EQU   ' '
 const_print_hex_sym     EQU   '$'
@@ -929,20 +954,12 @@ hex_characters  DC.B    '0123456789ABCDEF'
 print_blank         DC.B    0
 
 
-op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2,op_code_move1,op_code_move2,op_code_move3,0
-
-*Value first, mask second
-
-********** OP CODE EFFECTIVE ADDRESS MODES ************
+op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2,op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,0
 
 
+************** OP CODE DEFINITIONS ***************
 
-
-
-************** OP CODE MASKS AND VALUES ***************
-
-op_code_data    DC.W    $0000,$0000
-
+data_string     DC.B    'DATA',0
 
 op_string_lea   DC.B    'LEA',0
 op_code_lea     DC.W    $41C0,$F1C0,op_def_lea
@@ -982,9 +999,16 @@ op_code_move3   DC.W    $3000,$F000,op_def_move
 op_ea_move_src  DC.B    ea_all
 op_ea_move_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_move_src,3,0,opf_ea,op_ea_move_dest,6,9,opf_term
-data_string     DC.B    'DATA',0
 
+op_string_neg   DC.B    'NEG',0
+op_code_neg     DC.W    $4400,$FF00,op_def_neg
+op_ea_neg_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_neg      DC.W    op_string_neg,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_neg_dest,3,0,opf_term
 
+op_string_ori   DC.B    'ORI',0
+op_code_ori     DC.W    $0000,$FF00,op_def_ori
+op_ea_ori_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_ori_dest,3,0,opf_term
 
 CR EQU $0D
 LF EQU $0A
@@ -994,9 +1018,12 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-tst DC.W    $810F
+    ORI.W   #$1234,D4
     EOR.B   D1,(A0)+
-    OR.L    D5,$1234
+    
+    
+    NEG.W    D3
+    NEG.L    -(A1)
     MOVE.B  D1,(A0)
     MOVE.W  D4,D1
     MOVE.L  $A734,D3
