@@ -3,46 +3,39 @@
 * Written by :
 * Date       :
 * Description:
-*-----------------------------------------------------------
-
-*method that takes the available sizes and their addresses, no_size for invalid
-*returns the prints and returns the mode
-    
+*-----------------------------------------------------------  
     
     ORG    $1000
     
 srt_addr  EQU     $3000
 end_addr  EQU     $3020
-    
-    OFFSET  0
-op_value   DS.W    1
-op_mask    DS.W    1
-op_def     DS.W    1
-    ORG *
 
-START                                       ; first instruction of program
-    
-    MOVE.L  #srt_addr,current_addr          *Load the starting address
+START                                          
+    MOVE.L  #srt_addr,current_addr              *Load the starting address
 
 LOOP
     MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
-    MOVEA.L current_addr,A0                     *Load the current address
-    CMP.L   #end_addr,A0                        *Compare to our starting and ending
-    BGE     DONE                                *Check if done
-    CLR.W   output_string_displacement          *Clear the current word
-    CLR.B   invalid_op_flag                     *Clear the invalid flag
-    MOVE.W  (A0)+,D0                            *Move the current data to D0
-    MOVE.L  A0,current_addr                     *Update the current address
+    MOVEA.L current_addr,A0                     *Load the current address to A0
     
-    MOVEM.L D0,-(SP)
-    BSR     sub_build_current_line_address
-    MOVEM.L (SP)+,D0
-
-    MOVEA.W op_codes,A1
+    CMP.L   #end_addr,A0                        *See if we are at the end address
+    BGE     DONE                                *If so branch to done
     
-LOOP_OPCODES
+    CLR.W   output_string_displacement          *Reset the string displacement so we can write again
+    CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
+    
+    MOVE.W  (A0)+,D0                            *Move the opcode (or data) to D0 for processing
+    MOVE.L  A0,current_addr                     *Update the current address to reflect the change
+    
+    MOVEM.L D0,-(SP)                            *Save D0
+    BSR     sub_build_current_line_address      *Print out the current line
+    MOVEM.L (SP)+,D0                            *Restore D0
 
-    MOVE.W  D0,D1                               *Copy for masking                                  
+    MOVEA.W op_codes,A1                         *Move the starting address for the opcodes to A1
+    
+    
+LOOP_OPCODES                                    *Begin to loop through the opcodes using A1
+
+    MOVE.W  D0,D1                               *Make a copy of the opcode to use as a mask                                  
     
     MOVEA.W (A1)+,A2
     
