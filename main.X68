@@ -12,7 +12,6 @@ end_addr  EQU     $3020
 
 START                                          
     MOVE.L  #srt_addr,current_addr              *Load the starting address
-
 LOOP
     MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
     MOVEA.L current_addr,A0                     *Load the current address to A0
@@ -37,7 +36,7 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     MOVEA.W (A1)+,A2                            
 
     CMP.L   #0,A2                               *Check to see if we are at the end of the opcodes list
-    BEQ     CHECK_DATA                          *If so we'll print data
+    BEQ     OUTPUT_DATA                          *If so we'll print data
 
     MOVE.W  (A2)+,D2                            *Get the value
     MOVE.W  (A2)+,D1                            *Get the mask
@@ -52,11 +51,15 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     PEA     (A2)
     BSR     sub_process_opcode
     LEA     4(SP),SP
-        
+    
+    CMP.B   #true,invalid_op_flag
+    BEQ     OUTPUT_DATA
     BRA     OUTPUT
-CHECK_DATA
-    BSR     sub_op_data
-    BRA     LOOP
+    
+OUTPUT_DATA
+    BSR     sub_build_data
+    BRA     OUTPUT
+    
 DONE
     SIMHALT             ; halt simulator
 
@@ -66,26 +69,6 @@ OUTPUT
     TRAP    #15
     BRA     LOOP
 
-sub_op_nop
-    *PEA     print_op_nop
-    *BSR     sub_build_string
-    *LEA     4(SP),SP
-    RTS
-    
-sub_op_data
-    LEA     print_blank,A1
-    MOVEQ   #14,D0
-    TRAP    #15
-
-    MOVEQ   #15,D0
-    MOVEQ   #16,D2
-    TRAP    #15
-
-    LEA     print_blank,A1
-    MOVEQ   #13,D0
-    TRAP    #15
-
-    RTS
 
 **************************************************************
 *
@@ -289,6 +272,45 @@ sub_process_opcode_rts
     BSR     sub_build_finish                *Put the terminating character on the string
     RTS
 
+**************************************************************
+*
+* sub_build_data
+*
+* Puts a null character at the end
+*
+
+sub_build_data
+
+    CLR.W   output_string_displacement      *Reset the string displacement so we can write again
+
+
+    MOVEM.L     D0/A0,-(SP)                     *Save D0
+    BSR         sub_build_current_line_address  *Print out the current line
+    MOVEM.L     (SP)+,D0/A0                     *Restore D0
+
+    MOVE.L      #data_string,-(SP)          *Load the position of 'DATA' to the stack
+    BSR         sub_build_string            *Output DATA
+    LEA         4(SP),SP                    *Reset the stack pointer
+        
+    MOVE.W      #TAB,-(SP)                  *Load a tab character
+    BSR         sub_build_char              *Output it
+    LEA         2(SP),SP                    *Reset the stack
+    
+    MOVE.L      current_addr_backup,A0      *Get the backup address and put it in A0
+    CLR.L       D0                          *Clear D0
+    MOVE.W      (A0),D0                     *Load the value at A0 (the word) to D0
+    
+    MOVE.L      D0,-(SP)                    *Move the value to the stack
+    MOVE.W      #true,-(SP)                 *We want to print a hex symbol so #true
+    MOVE.W      #word_size,-(SP)            *Ops are always of word size
+    BSR         sub_build_hex_string        *Build the string
+    LEA         8(SP),SP                    *Reset the pointer
+    
+    BSR         sub_build_finish
+    
+    RTS
+    
+    
 **************************************************************
 *
 * sub_build_finish
@@ -677,6 +699,15 @@ sub_check_ea_string
     MOVE.W  sub_check_ea_string_reg(SP),D3      *Move the bit position of the reg to D3
     MOVE.W  sub_check_ea_string_size(SP),D5     *Move the size onto D5
     
+    CMP.W   #ea_add_dir,D2                      *See if we are in address direct mode
+    BNE     sub_check_ea_string_get_vals        *If not continue on
+    CMP.W   #byte_size,D5                       *See if it's a byte size
+    BNE     sub_check_ea_string_get_vals        *If not continue on
+    
+    BRA     sub_check_ea_string_not_found       *Address direct cannot be used with bytes
+    
+sub_check_ea_string_get_vals
+    
     MOVEM.L D3/D5,-(SP)                         *Backup D3 (reg bit pos) and A2
     MOVE.W  D2,-(SP)                            *Push mode bit position onto stack
     MOVE.W  #3,-(SP)                            *Push the mode size (always 3) onto the stack
@@ -699,6 +730,8 @@ sub_check_ea_string
     
 sub_check_ea_string_loop
     MOVE.B  (A2)+,D1                            *Grab the next ea_mode and store in D1
+    CMP.B   #ea_all,D1                          *Check if it accepts all modes
+    BEQ     sub_check_ea_string_print           *If it does we'll jump straight to printing
     CMP.B   #ea_term,D1                         *See if we are at the end of the available modes
     BEQ     sub_check_ea_string_not_found       *Branch to not found if true
     CMP.B   #ea_abs,D1                          *Test if it's absolute
@@ -786,29 +819,32 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
-byte_size EQU     1
-word_size EQU     2
-long_size EQU     4
-no_size   EQU     $F
+true                EQU 1
+false               EQU 0
+
+byte_size           EQU 1
+word_size           EQU 2
+long_size           EQU 4
+no_size             EQU $F
 
 right_nibble_mask   EQU $000F
 null                EQU 0
 
-ea_reg_dir             EQU %000
-ea_add_dir             EQU %001
-ea_ari                 EQU %010
-ea_ari_post            EQU %011
-ea_ari_pre             EQU %100
+* EA MODES
 
-ea_abs                 EQU %111    *This MUST preceed each ea_word,ea_long,ea_imm
-ea_word                EQU %000    *Used in conjunction with abs
-ea_long                EQU %001    *Used in conjunction with abs
-ea_imm                 EQU %100    *Used in conjunction with abs
+ea_reg_dir          EQU %000
+ea_add_dir          EQU %001
+ea_ari              EQU %010
+ea_ari_post         EQU %011
+ea_ari_pre          EQU %100
 
-ea_term                EQU %1111   *Terminates a list of ea modes
+ea_abs              EQU %111    *This MUST preceed each ea_word,ea_long,ea_imm
+ea_word             EQU %000    *Used in conjunction with abs
+ea_long             EQU %001    *Used in conjunction with abs
+ea_imm              EQU %100    *Used in conjunction with abs
 
-true      EQU     1
-false     EQU     0
+ea_term             EQU %1111   *Terminates a list of ea modes
+ea_all              EQU %1110   *Declares that all ea modes are accepted
 
 *** opf definitions ***
 * label [op name string address],{[size],[flip bit],[type],[type],opf_flipped,[type],[type],}[opf_term]
@@ -893,36 +929,61 @@ hex_characters  DC.B    '0123456789ABCDEF'
 print_blank         DC.B    0
 
 
-op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,0
+op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2,op_code_move1,op_code_move2,op_code_move3,0
 
 *Value first, mask second
 
 ********** OP CODE EFFECTIVE ADDRESS MODES ************
 
-op_ea_eor_dest   DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 
-op_ea_or_src     DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
-op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 
-op_ea_lea_src    DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long
+
 
 ************** OP CODE MASKS AND VALUES ***************
 
-op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
-op_code_eor     DC.W    $B100,$F100,op_def_eor
-op_code_or      DC.W    $8000,$F000,op_def_or
-op_code_lea     DC.W    $41C0,$F1C0,op_def_lea
 
-op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
-op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
+
+op_string_lea   DC.B    'LEA',0
+op_code_lea     DC.W    $41C0,$F1C0,op_def_lea
+op_ea_lea_src   DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long
 op_def_lea      DC.W    op_string_lea,opf_size,long_size,opf_ea,op_ea_lea_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
-op_string_nop    DC.B    'NOP',0
-op_string_data   DC.B    'DATA',0
-op_string_eor    DC.B    'EOR',0
-op_string_or     DC.B    'OR',0
-op_string_lea    DC.B    'LEA',0
+op_string_eor   DC.B    'EOR',0
+op_code_eor     DC.W    $B100,$F100,op_def_eor
+op_ea_eor_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
+
+op_string_or    DC.B   'OR',0
+op_code_or      DC.W    $8000,$F000,op_def_or
+op_ea_or_src    DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_ea_or_dest   DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
+
+op_string_nop   DC.B    'NOP',0
+op_code_nop     DC.W    $4E71,$FFFF,op_def_nop
+op_def_nop      DC.W    op_string_nop,opf_term
+
+op_string_adda  DC.B    'ADDA',0
+op_code_adda    DC.W    $D0C0,$F0C0,op_def_adda
+op_ea_adda_src  DC.B    ea_all
+op_def_adda     DC.W    op_string_adda,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_adda_src,3,0,opf_reg,9,ea_add_dir,opf_term
+
+op_string_movea DC.B    'MOVEA',0
+op_code_movea1  DC.W    $3040,$F1C0,op_def_movea    *Two different ways to define MOVEA
+op_code_movea2  DC.W    $2040,$F1C0,op_def_movea
+op_ea_movea_src DC.B    ea_all
+op_def_movea    DC.W    op_string_movea,opf_sizes,12,no_size,%11,%10,opf_ea,op_ea_movea_src,3,0,opf_reg,9,ea_add_dir,opf_term
+
+op_string_move  DC.B    'MOVE',0
+op_code_move1   DC.W    $1000,$F000,op_def_move     *Three different ways to define MOVE
+op_code_move2   DC.W    $2000,$F000,op_def_move
+op_code_move3   DC.W    $3000,$F000,op_def_move
+op_ea_move_src  DC.B    ea_all
+op_ea_move_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_move_src,3,0,opf_ea,op_ea_move_dest,6,9,opf_term
+data_string     DC.B    'DATA',0
+
 
 
 CR EQU $0D
@@ -933,8 +994,17 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+tst DC.W    $810F
     EOR.B   D1,(A0)+
     OR.L    D5,$1234
+    MOVE.B  D1,(A0)
+    MOVE.W  D4,D1
+    MOVE.L  $A734,D3
+    MOVEA.L D3,A3
+    MOVEA.W (A3)+,A0
+    ADDA.W  $ABCD,A4
+    ADDA.L  $ABCD,A4    
+    NOP
     LEA     (A0),A0
     LEA     $1234,A1
     LEA     $12345678,A2
