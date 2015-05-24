@@ -26,36 +26,33 @@ LOOP
     MOVE.W  (A0)+,D0                            *Move the opcode (or data) to D0 for processing
     MOVE.L  A0,current_addr                     *Update the current address to reflect the change
     
-    MOVEM.L D0,-(SP)                            *Save D0
+    MOVEM.L D0/A0,-(SP)                         *Save D0
     BSR     sub_build_current_line_address      *Print out the current line
-    MOVEM.L (SP)+,D0                            *Restore D0
+    MOVEM.L (SP)+,D0/A0                         *Restore D0
 
-    MOVEA.W op_codes,A1                         *Move the starting address for the opcodes to A1
-    
+    MOVE.W  #op_codes,A1                        *Move the starting address for the opcodes to A1
     
 LOOP_OPCODES                                    *Begin to loop through the opcodes using A1
 
-    MOVE.W  D0,D1                               *Make a copy of the opcode to use as a mask                                  
-    
-    MOVEA.W (A1)+,A2
-    
-    CMP.L   #0,(A2)                             *If we are out of opcodes increment
-    BEQ     CHECK_DATA
-    
-    AND.W   (op_mask,A2),D1          *And against the first bitmask
-    CMP.W   (op_value,A2),D1         *See if the values are equal
-    BNE     LOOP_OPCODES               *If it's a match then we'll go to the OP_NOP routine
-    
-    MOVEA.W (op_def,A2),A2
-    
-    MOVEM.W D0-D7/A0-A7,-(SP)
+    MOVEA.W (A1)+,A2                            
+
+    CMP.L   #0,A2                               *Check to see if we are at the end of the opcodes list
+    BEQ     CHECK_DATA                          *If so we'll print data
+
+    MOVE.W  (A2)+,D2                            *Get the value
+    MOVE.W  (A2)+,D1                            *Get the mask
+
+    AND.W   D0,D1                               *Mask the opcode value
+    CMP.W   D1,D2                               *See if it's a match      
+
+    BNE     LOOP_OPCODES  
+
+    MOVE.W  (A2)+,A2                 
     
     PEA     (A2)
     BSR     sub_process_opcode
-    LEA     2(SP),SP
-    
-    MOVEM.W (SP)+,D0-D7/A0-A7
-    
+    LEA     4(SP),SP
+        
     BRA     OUTPUT
 CHECK_DATA
     BSR     sub_op_data
@@ -896,7 +893,7 @@ hex_characters  DC.B    '0123456789ABCDEF'
 print_blank         DC.B    0
 
 
-op_codes        DC.W    op_code_eor,op_code_or,0
+op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,0
 
 *Value first, mask second
 
@@ -915,7 +912,7 @@ op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
 op_code_eor     DC.W    $B100,$F100,op_def_eor
 op_code_or      DC.W    $8000,$F000,op_def_or
-op_code_lea     DC.W    $4880,$FB80,op_def_lea
+op_code_lea     DC.W    $41C0,$F1C0,op_def_lea
 
 op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
 op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
@@ -936,11 +933,12 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+    EOR.B   D1,(A0)+
+    OR.L    D5,$1234
     LEA     (A0),A0
     LEA     $1234,A1
     LEA     $12345678,A2
-    EOR.B   D1,(A0)+
-    OR.L    D5,$1234
+    
     OR.W    D5,$1234
     OR.B    D1,$1234
     OR.L    $1234,D5
