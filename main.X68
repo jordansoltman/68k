@@ -37,22 +37,32 @@ LOOP
     MOVEM.L D0,-(SP)
     BSR     sub_build_current_line_address
     MOVEM.L (SP)+,D0
-    
-    MOVEA.L op_codes,A1
+
+    MOVEA.W op_codes,A1
     
 LOOP_OPCODES
 
     MOVE.W  D0,D1                               *Copy for masking                                  
     
+    MOVEA.W (A1)+,A2
     
+    CMP.L   #0,(A2)                             *If we are out of opcodes increment
+    BEQ     CHECK_DATA
     
-    AND.W   op_code_eor+op_mask,D1          *And against the first bitmask
-    CMP.W   op_code_eor+op_value,D1         *See if the values are equal
-    BNE     CHECK_DATA                      *If it's a match then we'll go to the OP_NOP routine
-    MOVEA.W op_code_eor+op_def,A1
-    PEA     (A1)
+    AND.W   (op_mask,A2),D1          *And against the first bitmask
+    CMP.W   (op_value,A2),D1         *See if the values are equal
+    BNE     LOOP_OPCODES               *If it's a match then we'll go to the OP_NOP routine
+    
+    MOVEA.W (op_def,A2),A2
+    
+    MOVEM.W D0-D7/A0-A7,-(SP)
+    
+    PEA     (A2)
     BSR     sub_process_opcode
     LEA     2(SP),SP
+    
+    MOVEM.W (SP)+,D0-D7/A0-A7
+    
     BRA     OUTPUT
 CHECK_DATA
     BSR     sub_op_data
@@ -904,20 +914,25 @@ op_ea_eor_dest   DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word
 op_ea_or_src     DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_ea_or_dest    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 
+op_ea_lea_src    DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long
+
 ************** OP CODE MASKS AND VALUES ***************
 
 op_code_nop     DC.W    $4E71,$FFFF
 op_code_data    DC.W    $0000,$0000
 op_code_eor     DC.W    $B100,$F100,op_def_eor
 op_code_or      DC.W    $8000,$F000,op_def_or
+op_code_lea     DC.W    $4880,$FB80,op_def_lea
 
 op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
 op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
+op_def_lea      DC.W    op_string_lea,opf_size,long_size,opf_ea,op_ea_lea_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_nop    DC.B    'NOP',0
 op_string_data   DC.B    'DATA',0
 op_string_eor    DC.B    'EOR',0
 op_string_or     DC.B    'OR',0
+op_string_lea    DC.B    'LEA',0
 
 
 CR EQU $0D
@@ -928,8 +943,9 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    EOR.L   D5,$2345
-    EOR.W   D5,(A0)
+    LEA     (A0),A0
+    LEA     $1234,A1
+    LEA     $12345678,A2
     EOR.B   D1,(A0)+
     OR.L    D5,$1234
     OR.W    D5,$1234
