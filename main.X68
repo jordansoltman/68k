@@ -98,6 +98,9 @@ sub_process_opcode
     CMP.W   #opf_term,D1                    *See if we have terminated
     BEQ     sub_process_opcode_rts          *We are done with this code so we'll return
     
+    CMP.W   #opf_no_size,D1                 *See if it doens't have a size
+    BEQ     sub_process_opcode_tab          *If it doesn't skip ahead
+    
     CMP.W   #opf_size,D1                    *See if it is a size
     BNE     sub_process_opcode_opf_sizes    *Must support different sizes (not a single size)
     
@@ -166,19 +169,26 @@ sub_process_opcode_types
     ** code for count
     MOVE.W  (A0)+,D1                        *Get the immediate count value
     
-    MOVEM.L D0/D1/D7/A0,-(SP)                  *Backup registers
+    MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
     MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
     BSR     sub_build_char                  *Output the pound sign
     LEA     2(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D1/D7/A0                  *Restore the registers
+    MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
     
-    MOVEM.L D0/D7/A0,-(SP)                     *Backup registers
-    MOVE.W  D1,-(SP)                        *Put the value to the stack
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
+    MOVE.W  D1,-(SP)                        *Put the bit position in D1
+    MOVE.W  #3,-(SP)                        *set our size to 3
+    BSR     sub_handy_mask                  *Grab those values
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
+    MOVE.L  D1,-(SP)                        *Put the value to the stack
     MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
     MOVE.W  #byte_size,-(SP)                *Print it out as a byte
     BSR     sub_build_hex_string            *Print out the value
     LEA     8(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
     
     BRA     sub_process_opcode_types_next   *Go on to the next item
     
@@ -222,8 +232,15 @@ sub_process_opcode_types_cnt_reg
     LEA     2(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
     
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
+    MOVE.W  D1,-(SP)                        *Put the bit position in D1
+    MOVE.W  #3,-(SP)                        *set our size to 3
+    BSR     sub_handy_mask                  *Grab those values
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
-    MOVE.W  D1,-(SP)                        *Put the value to the stack
+    MOVE.L  D1,-(SP)                        *Put the value to the stack
     MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
     MOVE.W  #byte_size,-(SP)                *Print it out as a byte
     BSR     sub_build_hex_string            *Print out the value
@@ -246,11 +263,9 @@ sub_process_opcode_types_imm
     MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
     
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
-    MOVE.W  D1,-(SP)                        *Put the value to the stack
-    MOVE.W  #true,-(SP)                     *Don't print the hex char because we are going to be <= 8
-    MOVE.W  D7,-(SP)                        *Print it out
-    BSR     sub_build_hex_string            *Print out the value
-    LEA     8(SP),SP                        *Reset the stack
+    MOVE.W  D7,-(SP)                        *Push the size onto the stack
+    BSR     sub_build_next_abs              *Print out the value
+    LEA     2(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     BRA     sub_process_opcode_types_next
@@ -923,11 +938,13 @@ opf_sizes       EQU     7
 * 1) size (in byte_size, word_size, long_size)
 opf_size        EQU     8
 
+opf_no_size     EQU     9
+
 *** opf_sub ***
 * 1) address of the subroutine to use instead
-opf_sub         EQU      9
+opf_sub         EQU      10
 
-opf_term        EQU      10
+opf_term        EQU      11
 
 const_print_space       EQU   ' '
 const_print_hex_sym     EQU   '$'
@@ -954,8 +971,9 @@ hex_characters  DC.B    '0123456789ABCDEF'
 print_blank         DC.B    0
 
 
-op_codes        DC.W    op_code_eor,op_code_or,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2,op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,0
-
+op_codes        DC.W    op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_adda,op_code_movea1,op_code_movea2
+op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
+op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1010,6 +1028,37 @@ op_code_ori     DC.W    $0000,$FF00,op_def_ori
 op_ea_ori_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_ori_dest,3,0,opf_term
 
+op_string_cmpi  DC.B    'CMPI',0
+op_code_cmpi    DC.W    $0C00,$FF00,op_def_cmpi
+op_ea_cmpi_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_cmpi     DC.W    op_string_cmpi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_cmpi_dest,3,0,opf_term
+
+op_string_rts   DC.B    'RTS',0
+op_code_rts     DC.W    $4E75,$FFFF,op_def_rts
+op_def_rts      DC.W    op_string_rts,opf_term
+
+op_string_jsr   DC.B    'JSR',0
+op_code_jsr     DC.W    $4E80,$FFC0,op_def_jsr
+op_ea_jsr_dest  DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_jsr      DC.W    op_string_jsr,opf_no_size,opf_ea,op_ea_jsr_dest,3,0,opf_term
+
+op_string_subq  DC.B    'SUBQ',0
+op_code_subq    DC.W    $5000,$F000,op_def_subq
+op_ea_subq_dest DC.B    ea_reg_dir,ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_subq     DC.W    op_string_subq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_subq_dest,3,0,opf_term
+
+op_string_divs  DC.B    'DIVS',0
+op_code_divs    DC.W    $81C0,$F1C0,op_def_divs
+op_ea_divs_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_divs     DC.W    op_string_divs,opf_size,word_size,opf_ea,op_ea_divs_src,3,0,opf_reg,9,ea_reg_dir,opf_term
+
+op_string_sub   DC.B    'SUB',0
+op_code_sub     DC.W    $9000,$F000,op_def_sub
+op_ea_sub_src   DC.B    ea_all
+op_ea_sub_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_sub_dest,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_sub_dest,3,0,opf_term
+
 CR EQU $0D
 LF EQU $0A
 TAB EQU $9
@@ -1018,13 +1067,20 @@ TAB EQU $9
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+    SUBQ.W  #4,A0
     ORI.W   #$1234,D4
+    SUB.W   $1233,D3
+    DIVS    #$12,D1
+    RTS
+    JSR     (A0)
+    JSR     $1234
     EOR.B   D1,(A0)+
-    
+    CMPI.L  #$12345678,D2
     
     NEG.W    D3
     NEG.L    -(A1)
     MOVE.B  D1,(A0)
+    
     MOVE.W  D4,D1
     MOVE.L  $A734,D3
     MOVEA.L D3,A3
