@@ -262,9 +262,17 @@ sub_process_opcode_types_imm
 
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
     MOVE.W  D7,-(SP)                        *Push the size onto the stack
-    BSR     sub_build_next_abs              *Print out the value
+    BSR     sub_get_next_abs                *Print out the value
     LEA     2(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    
+    MOVEM.L A0/D0/D7,-(SP)                  * save current address on the stack
+    MOVE.L  D3,-(SP)                        * move value (word or long) to stack
+    MOVE.W  #true,-(SP)                     * Always true becuase we always want to print the $ symbol
+    MOVE.W  D7,-(SP)                        * move size to the stack
+    BSR     sub_build_hex_string            * call sub_build_hex_string
+    LEA     8(SP),SP                        * reset the stack
+    MOVEM.L (SP)+,A0/D0/D7                  * reload A0 with current address
 
     BRA     sub_process_opcode_types_next
 
@@ -499,18 +507,23 @@ sub_build_ea_string
     MOVE.W      #word_size,D3                       *Setup for word_size printing
     BRA         sub_build_ea_string_abs_print       *Branch to print address
 sub_build_ea_string_immediate
-    MOVEM.L     D3,-(SP)
-    MOVE.W      #'#',-(SP)
-    BSR         sub_build_char
-    LEA         2(SP),SP
-    MOVEM.L     (SP)+,D3
-    BRA         sub_build_ea_string_abs_print
+    MOVEM.L     D3,-(SP)                            *Backup D3
+    MOVE.W      #'#',-(SP)                          *Push the immedate symbol onto the stack
+    BSR         sub_build_char                      *Print it
+    LEA         2(SP),SP                            *Reset the stack
+    MOVEM.L     (SP)+,D3                            *Restore D3
+    BRA         sub_build_ea_string_abs_print       *Move on to print
 sub_build_ea_string_addr_long
     MOVE.W      #long_size,D3                       *Setup for long_size printing
 sub_build_ea_string_abs_print
-    MOVE.W      D3,-(SP)
-    BSR         sub_build_next_abs
-    LEA         2(SP),SP
+    MOVE.W      D3,-(SP)                            *Push the size onto the stack
+    BSR         sub_get_next_abs                    *Get the next word/long to D1
+    LEA         2(SP),SP                            *Reset the stack
+    MOVE.L      D1,-(SP)                            * move value (word or long) to stack
+    MOVE.W      #true,-(SP)                         * Always true becuase we always want to print the $ symbol
+    MOVE.W      D3,-(SP)                            * move size to the stack
+    BSR         sub_build_hex_string                * call sub_build_hex_string
+    LEA         8(SP),SP                            * reset the stack
     RTS
 
     *Deals with the register cases
@@ -556,36 +569,31 @@ sub_build_ea_string_rts
 
 **************************************************************
 *
-* sub_build_next_abs
+* sub_get_next_abs
 *
-* Grabs the next address from the
+* Grabs the next 
 *
 * Stack Parameters:
-* 1 (W): Size defined by either byte_size, word_size or long_size
+* 1 (W): Size defined by either word_size or long_size
 *
+* Return Registers:
+* 1 (W/L): Returns the word or long in D1
 
     OFFSET 4
-sub_build_next_abs_size    DS.W    1
+sub_get_next_abs_size    DS.W    1
     ORG *
 
-sub_build_next_abs
-    MOVE.W  sub_build_next_abs_size(SP),D1              * load size to D1
+sub_get_next_abs
+    MOVE.W  sub_get_next_abs_size(SP),D1              * load size to D1
     MOVEA.L current_addr,A0                             * load current address to A0
 
     CMP.W   #long_size,D1                               * compare size to long
-    BEQ     sub_build_next_abs_long                     * branch to special case if true
-    MOVE.W  (A0)+,D3                                    * get next word
-    BRA     sub_build_next_abs_print
-sub_build_next_abs_long
-    MOVE.L  (A0)+,D3                                    * get next long
-sub_build_next_abs_print
-    MOVEM.L A0,-(SP)                                    * save current address on the stack
-    MOVE.L  D3,-(SP)                                    * move value (word or long) to stack
-    MOVE.W  #true,-(SP)                                 * Always true becuase we always want to print the $ symbol
-    MOVE.W  D1,-(SP)                                    * move size to the stack
-    BSR     sub_build_hex_string                        * call sub_build_hex_string
-    LEA     8(SP),SP                                    * reset the stack
-    MOVEM.L (SP)+,A0                                    * reload A0 with current address
+    BEQ     sub_get_next_abs_long                     * branch to special case if true
+    MOVE.W  (A0)+,D1                                    * get next word
+    BRA     sub_get_next_abs_adj
+sub_get_next_abs_long
+    MOVE.L  (A0)+,D1                                    * get next long
+sub_get_next_abs_adj
     MOVE.L  A0,current_addr                             * set current address to value of A0
     RTS
 
@@ -623,6 +631,23 @@ sub_build_direct_string
     LEA     6(SP),SP                                *Reset the stack pointer
 
     RTS
+
+**************************************************************
+*
+* sub_build_displacement
+*
+* Stack Parameters:
+* 1 (W): Displacement offset
+*
+    OFFSET 4
+sub_build_displacement_offset    DS.W   1
+    ORG *
+    
+sub_build_displacement
+    MOVE.W  sub_build_displacement(SP),D0           *Get the displacement
+    CMP.W   #word_displace,D0                       *See if it's a word displacement
+    
+    
 
 
 **************************************************************
@@ -879,6 +904,9 @@ sub_handy_mask_done
 
 true                EQU 1
 false               EQU 0
+
+word_displace       EQU $00
+long_displace       EQU $FF
 
 nibble_size         EQU 0   *This representation cannot be used mathematically
 byte_size           EQU 1
@@ -1181,7 +1209,7 @@ tab_stops       DC.B    8,17,24
     LSR.L   D1,D3
     LSL.L   D1,D3
 
-    ADD.W   (A0)+,D3
+    ADD.L   $12345678,D3
     SUBQ.W  #4,A0
     ORI.W   #$1234,D4
     SUB.W   $1233,D3
