@@ -306,26 +306,29 @@ sub_process_opcode_types_disp
     CMP.W   #opf_disp,D1                    *See if it's a displacement
     BNE     sub_process_opcode_types_sub
 
-    MOVEM.L D1/D0,-(SP)                        *Backup D1
-    BSR     sub_tab                         *Build the size operand
-    MOVEM.L (SP)+,D1/D0                        *Restore D1
-
+    MOVEM.L D0/A0,-(SP)
     MOVE.W  #0,-(SP)
     MOVE.W  #8,-(SP)
     BSR     sub_handy_mask
     LEA     4(SP),SP
+    MOVEM.L (SP)+,D0/A0 
 
+    MOVEM.L D0/A0,-(SP)
     MOVE.W  D1,-(SP)
     BSR     sub_build_displacement
     LEA     2(SP),SP
+    MOVEM.L (SP)+,D0/A0 
     
     BRA     sub_process_opcode_types_next
     
         
 sub_process_opcode_types_sub
     
-    MOVE.W  (A0)+,A0
-    JSR     (A0)
+    MOVE.W  (A0)+,A1
+    
+    MOVEM.L D1/D0/A0,-(SP)
+    JSR     (A1)
+    MOVEM.L (SP)+,D1/D0/A0 
 
 sub_process_opcode_types_next
 
@@ -1272,7 +1275,7 @@ tab_stops       DC.B    8,17,24
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    *MOVEM.W D0,-(SP)
+    MOVEM.W D0,-(SP)
     BRA     $2FFE
     BLT     $3005
     BGE     $3008
