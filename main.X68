@@ -429,8 +429,15 @@ sub_build_char
     MOVE.W      output_string_displacement,D0   *Load current displacement to D0
     ADD.W       D0,A0                           *Adjust the address for the current displacement
     MOVE.W      sub_build_char_ascii(SP),D1
-    MOVE.B      D1,(A0)+
-    ADDQ.W      #byte_size,D0
+    
+    CMP.W       #BS,D1                          *See if it's a backspace
+    BNE         sub_build_char_output           *If not output the char
+    SUBQ        #byte_size,D0                   *Otherwise subtract one from our displacement
+    BRA         sub_build_char_rts              *And RTS
+sub_build_char_output
+    MOVE.B      D1,(A0)+                        *Move the character on
+    ADDQ.W      #byte_size,D0                   *Increase by one
+sub_build_char_rts
     MOVE.W      D0,output_string_displacement
     RTS
 
@@ -519,7 +526,7 @@ sub_build_hex_string_rts
 * Paremeters:
 * 1 (W): Mode in defined ea_modes_[X]
 * 2 (W): Register 0-7
-* 3 (W): (For Immediate) Size can be passed in as byte_size, word_size, or long_size
+* 3 (W): (For Immediate) Size can be passed in as byte_size, word_size, or long_size NOTE: no_size if not immediate
 
     OFFSET 4
 sub_build_ea_string_size        DS.W    1
@@ -1256,16 +1263,65 @@ op_def_blt      DC.W    op_string_blt,opf_no_size,opf_disp,opf_term
 
 op_string_movem DC.B    'MOVEM',0
 op_code_movem   DC.W    $4880,$FB80,op_def_movem
-op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_sub,sub_op_movem,opf_term
+op_ea_movem_rtm DC.B    ea_ari,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_ea_movem_mtr DC.B    ea_ari,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term 
+op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_flip,10,opf_sub,sub_op_movem_rev,opf_ea,op_ea_movem_rtm,3,0
+op_def_movemf   DC.W    opf_flipped,opf_ea,op_ea_movem_mtr,3,0,opf_sub,sub_op_movem_reg,opf_term
 
-
+sub_op_movem_reg
+    MOVE.B      #false,D7
+    BRA         sub_op_movem
+sub_op_movem_rev
+    MOVE.B      #true,D7                *D7 deterimines if this should operate in reverse
 sub_op_movem
-    
+    MOVE.B      #ea_reg_dir,D6          *Start data register mode
+    MOVE.W      #word_size,-(SP)        *We want the word
+    BSR         sub_get_next_abs        *Get the next word to D1
+    LEA         2(SP),SP                *Reset the stack pointer
+    CLR.B       D2                      *Clear D2 to use as a counter
+sub_op_movem_loop
+    CMP.B       #16,D2                  *See if we are done going through the registers         
+    BGE         sub_op_movem_rts        *If we are done return control
+    CMP.B       #false,D7               *Check the direction
+    BNE         sub_op_movem_loop_lsl   
+    LSR.W       #1,D1
+    BRA         sub_op_movem_loop_output
+sub_op_movem_loop_lsl
+    LSL.W       #1,D1
+sub_op_movem_loop_output
+    BCC         sub_op_movem_chk
+    MOVE.L      D2,D3
+    DIVU        #8,D3
+    SWAP        D3 
+    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP)
+    MOVE.W      D6,-(SP)
+    MOVE.W      D3,-(SP)
+    MOVE.W      #no_size,-(SP)
+    BSR         sub_build_ea_string
+    LEA         6(SP),SP
+    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7
+    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP)
+    MOVE.W      #'/',-(SP)
+    BSR         sub_build_char
+    LEA         2(SP),SP
+    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7
+sub_op_movem_chk
+    CMP.B       #7,D2
+    BNE         sub_op_movem_inc
+    MOVE.W      #ea_add_dir,D6
+sub_op_movem_inc
+    ADDQ.B      #1,D2
+    BRA         sub_op_movem_loop
+sub_op_movem_rts
+    MOVE.W      #BS,-(SP)
+    BSR         sub_build_char
+    LEA         2(SP),SP
     RTS
 
 CR EQU $0D
 LF EQU $0A
 TAB EQU $9
+BS  EQU $8
 
 tab_stops       DC.B    8,17,24
 
@@ -1275,7 +1331,8 @@ tab_stops       DC.B    8,17,24
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-    MOVEM.W D0,-(SP)
+    MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
+    MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
     BRA     $2FFE
     BLT     $3005
     BGE     $3008
