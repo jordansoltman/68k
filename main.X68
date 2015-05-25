@@ -140,7 +140,7 @@ sub_process_opcode_tab
 
     CMP.W   #opf_term,D1                    *See if this code is done
     BEQ     sub_process_opcode_rts          *If so we are done
-
+    
     CMP.W   #opf_flip,D1                    *See if the flip bit is set
     BNE     sub_process_opcode_back_types   *If not we'll skip to types
 
@@ -165,6 +165,7 @@ sub_process_opcode_types
     BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
 
     ** code for count
+    
     MOVE.W  (A0)+,D1                        *Get the immediate count value
 
     MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
@@ -194,6 +195,7 @@ sub_process_opcode_types_reg
 
     CMP.W   #opf_reg,D1
     BNE     sub_process_opcode_types_cnt_reg
+    
     ** code for reg
 
 sub_process_opcode_types_reg_qwk               *Quick access to reg
@@ -265,7 +267,7 @@ sub_process_opcode_types_imm
     BSR     sub_get_next_abs                *Print out the value
     LEA     2(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
-    
+
     MOVEM.L A0/D0/D7,-(SP)                  * save current address on the stack
     MOVE.L  D3,-(SP)                        * move value (word or long) to stack
     MOVE.W  #true,-(SP)                     * Always true becuase we always want to print the $ symbol
@@ -277,6 +279,9 @@ sub_process_opcode_types_imm
     BRA     sub_process_opcode_types_next
 
 sub_process_opcode_types_ea
+
+    CMP.W   #opf_ea,D1                      *Check if it's an EA
+    BNE     sub_process_opcode_types_disp   *If not go to disp
 
     CLR.L   D1                              *Clear D1 to get address
     MOVE.W  (A0)+,D1                        *Get the address of acceptable EA modes
@@ -293,6 +298,34 @@ sub_process_opcode_types_ea
     LEA     10(SP),SP                       *Reset the pointer
 
     MOVEM.L (SP)+,A0/D0/D7                  *Reset the pointer
+    
+    BRA     sub_process_opcode_types_next
+    
+sub_process_opcode_types_disp
+
+    CMP.W   #opf_disp,D1                    *See if it's a displacement
+    BNE     sub_process_opcode_types_sub
+
+    MOVEM.L D1/D0,-(SP)                        *Backup D1
+    BSR     sub_tab                         *Build the size operand
+    MOVEM.L (SP)+,D1/D0                        *Restore D1
+
+    MOVE.W  #0,-(SP)
+    MOVE.W  #8,-(SP)
+    BSR     sub_handy_mask
+    LEA     4(SP),SP
+
+    MOVE.W  D1,-(SP)
+    BSR     sub_build_displacement
+    LEA     2(SP),SP
+    
+    BRA     sub_process_opcode_types_next
+    
+        
+sub_process_opcode_types_sub
+    
+    MOVE.W  (A0)+,A0
+    JSR     (A0)
 
 sub_process_opcode_types_next
 
@@ -331,7 +364,7 @@ sub_build_data
     BSR         sub_build_string            *Output DATA
     LEA         4(SP),SP                    *Reset the stack pointer
 
-    BSR         sub_tab              *Output it
+    BSR         sub_tab                     *Output it
 
     MOVE.L      current_addr_backup,A0      *Get the backup address and put it in A0
     CLR.L       D0                          *Clear D0
@@ -571,7 +604,7 @@ sub_build_ea_string_rts
 *
 * sub_get_next_abs
 *
-* Grabs the next 
+* Grabs the next
 *
 * Stack Parameters:
 * 1 (W): Size defined by either word_size or long_size
@@ -642,36 +675,29 @@ sub_build_direct_string
     OFFSET 4
 sub_build_displacement_offset    DS.W   1
     ORG *
-    
+
 sub_build_displacement
+    MOVE.L   current_addr,D7                        *Add our displacement to the address
     CLR.L   D1                                      *Clear out D1
-    MOVE.W  sub_build_displacement(SP),D0           *Get the displacement and put in D0
+    MOVE.W  sub_build_displacement_offset(SP),D0    *Get the displacement and put in D0
     CMP.W   #word_displace,D0                       *See if it's a word displacement
-    BNE     sub_build_displacement_long             *If it's not a word check long
+    BNE     sub_build_displacement_byte             *If it's not a word it's a byte
+
     MOVE.W  #word_size,-(SP)                        *Put word size onto the stack
-    BRA     sub_build_displacement_fetch
-sub_build_displacement_long
-    CMP.W   #long_displace,D0                       *See if it's a long displacement
-    BNE     sub_build_displacement_byte             *Must be a byte
-    MOVE.W  #long_size,-(SP)                        *Push long size onto the stack
-sub_build_displacement_fetch
     BSR     sub_get_next_abs                        *Get the next word or long to D1
     LEA     2(SP),SP                                *Reset the stack pointer
-    BRA     sub_build_displacement_ext_word
+    EXT.L   D1                                      *Extend to a long
+    BRA     sub_build_displacement_output
 sub_build_displacement_byte
     MOVE.B  D0,D1                                   *Move byte to D0
     EXT.W   D1                                      *Extend to a word
     EXT.L   D1                                      *Then to a long
-sub_build_displacement_ext_word
-    MOVE.W  sub_build_displacement(SP),D0           *Reload the displacement
-    CMP.W   #word_displace,D0                       *Check again to see if it's a word
-    BNE     sub_build_displacement_output           *Branch to output
-    EXT.L   D1                                      *Extend to a long
 sub_build_displacement_output
-    ADD.L   current_addr_backup,D1                  *Add our displacement to the address
+    ADD.L   D7,D1
     MOVE.L  D1,-(SP)                                *Put the value on the stack
     MOVE.W  #false,-(SP)                            *Don't print the hex symbol
     MOVE.W  #word_size,-(SP)                        *Print the address as a word
+    BSR     sub_build_hex_string
     LEA     8(SP),SP                                *Reset the stack
     RTS
 
@@ -877,11 +903,11 @@ sub_tab_spc_loop
     MOVE.B      #' ',(A1)+                          *Push a space onto the output string
     ADDQ        #1,D1                               *Increment the displacement
     BRA         sub_tab_spc_loop                    *Add another space
-sub_tab_rts     
+sub_tab_rts
     MOVE.W      D1,output_string_displacement
     RTS
-    
-              
+
+
 
 **************************************************************
 *
@@ -996,31 +1022,34 @@ opf_count_reg   EQU     3
 
 opf_imm         EQU     4
 
+opf_disp        EQU     5
+
+*** opf_sub ***
+* Passes control to a subroutine
+* 1) address of subroutine
+opf_sub         EQU      6
+
 *** opf_flip ***
 * Determines if A and B can be flipped
 * 1) bit position
-opf_flip        EQU     5
+opf_flip        EQU     7
 
-opf_flipped     EQU     6
+opf_flipped     EQU     8
 
 *** opf_sizes ***
 * 1) determinent bit position (starting location where size can be determined)
 * 2) byte representation or no_size
 * 3) word representation or no_size
 * 4) long representation or no_size
-opf_sizes       EQU     7
+opf_sizes       EQU     9
 
 *** opf_size_only ***
 * 1) size (in byte_size, word_size, long_size)
-opf_size        EQU     8
+opf_size        EQU     10
 
-opf_no_size     EQU     9
+opf_no_size     EQU     11
 
-*** opf_sub ***
-* 1) address of the subroutine to use instead
-opf_sub         EQU      10
-
-opf_term        EQU      11
+opf_term        EQU      12
 
 const_print_space       EQU   ' '
 const_print_hex_sym     EQU   '$'
@@ -1050,7 +1079,8 @@ print_blank         DC.B    0
 op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
 op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
 op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls
-op_codes3       DC.W    op_code_asrm,op_code_aslm,op_code_lslm,op_code_lsrm,op_code_asr,op_code_asl,op_code_rolm,op_code_rorm,op_code_rol,op_code_ror,op_code_lsr,op_code_lsl,0 **this order is strict
+op_codes3       DC.W    op_code_asrm,op_code_aslm,op_code_lslm,op_code_lsrm,op_code_asr,op_code_asl,op_code_rolm,op_code_rorm,op_code_rol,op_code_ror,op_code_lsr,op_code_lsl **this order is strict
+op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1201,6 +1231,35 @@ op_ea_lslm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_l
 op_code_lslm    DC.W    $E3C0,$FFC0,op_def_lslm
 op_def_lslm     DC.W    op_string_lsl,opf_size,word_size,opf_ea,op_ea_lslm,3,0,opf_term
 
+op_string_bra   DC.B    'BRA',0
+op_code_bra     DC.W    $6000,$FF00,op_def_bra
+op_def_bra      DC.W    op_string_bra,opf_no_size,opf_disp,opf_term
+
+op_string_bcs   DC.B    'BCS',0
+op_code_bcs     DC.W    $6500,$FF00,op_def_bcs
+op_def_bcs      DC.W    op_string_bcs,opf_no_size,opf_disp,opf_term
+
+op_string_bvc   DC.B    'BVC',0
+op_code_bvc     DC.W    $6800,$FF00,op_def_bvc
+op_def_bvc      DC.W    op_string_bvc,opf_no_size,opf_disp,opf_term
+
+op_string_bge   DC.B    'BGE',0
+op_code_bge     DC.W    $6C00,$FF00,op_def_bge
+op_def_bge      DC.W    op_string_bge,opf_no_size,opf_disp,opf_term
+
+op_string_blt   DC.B    'BLT',0
+op_code_blt     DC.W    $6D00,$FF00,op_def_blt
+op_def_blt      DC.W    op_string_blt,opf_no_size,opf_disp,opf_term
+
+op_string_movem DC.B    'MOVEM',0
+op_code_movem   DC.W    $4880,$FB80,op_def_movem
+op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_sub,sub_op_movem,opf_term
+
+
+sub_op_movem
+    
+    RTS
+
 CR EQU $0D
 LF EQU $0A
 TAB EQU $9
@@ -1213,21 +1272,25 @@ tab_stops       DC.B    8,17,24
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
-tst DC.W    $0007
+    *MOVEM.W D0,-(SP)
+    BRA     $2FFE
+    BLT     $3005
+    BGE     $3008
+    BVC     $3922
+    BCS     $2323
     ASR.W   (A0)+
     ASL.W   (A0)+
     ASR.L   #3,D3
     ASL.L   #3,D3
     ASR.L   D1,D3
     ASL.L   D1,D3
-
-    ROR.W   (A0)+
+tst ROR.W   (A0)+
     ROL.W   (A0)+
     ROR.L   #3,D3
     ROL.L   #3,D3
     ROR.L   D1,D3
     ROL.L   D1,D3
-    
+
     LSR.W   (A0)+
     LSL.W   (A0)+
     LSR.L   #3,D3
@@ -1254,6 +1317,7 @@ tst DC.W    $0007
 
 
     END    START        ; last line of source
+
 
 
 
