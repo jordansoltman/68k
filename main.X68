@@ -644,11 +644,36 @@ sub_build_displacement_offset    DS.W   1
     ORG *
     
 sub_build_displacement
-    MOVE.W  sub_build_displacement(SP),D0           *Get the displacement
+    CLR.L   D1                                      *Clear out D1
+    MOVE.W  sub_build_displacement(SP),D0           *Get the displacement and put in D0
     CMP.W   #word_displace,D0                       *See if it's a word displacement
-    
-    
-
+    BNE     sub_build_displacement_long             *If it's not a word check long
+    MOVE.W  #word_size,-(SP)                        *Put word size onto the stack
+    BRA     sub_build_displacement_fetch
+sub_build_displacement_long
+    CMP.W   #long_displace,D0                       *See if it's a long displacement
+    BNE     sub_build_displacement_byte             *Must be a byte
+    MOVE.W  #long_size,-(SP)                        *Push long size onto the stack
+sub_build_displacement_fetch
+    BSR     sub_get_next_abs                        *Get the next word or long to D1
+    LEA     2(SP),SP                                *Reset the stack pointer
+    BRA     sub_build_displacement_ext_word
+sub_build_displacement_byte
+    MOVE.B  D0,D1                                   *Move byte to D0
+    EXT.W   D1                                      *Extend to a word
+    EXT.L   D1                                      *Then to a long
+sub_build_displacement_ext_word
+    MOVE.W  sub_build_displacement(SP),D0           *Reload the displacement
+    CMP.W   #word_displace,D0                       *Check again to see if it's a word
+    BNE     sub_build_displacement_output           *Branch to output
+    EXT.L   D1                                      *Extend to a long
+sub_build_displacement_output
+    ADD.L   current_addr_backup,D1                  *Add our displacement to the address
+    MOVE.L  D1,-(SP)                                *Put the value on the stack
+    MOVE.W  #false,-(SP)                            *Don't print the hex symbol
+    MOVE.W  #word_size,-(SP)                        *Print the address as a word
+    LEA     8(SP),SP                                *Reset the stack
+    RTS
 
 **************************************************************
 *
@@ -1188,6 +1213,7 @@ tab_stops       DC.B    8,17,24
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+tst DC.W    $0007
     ASR.W   (A0)+
     ASL.W   (A0)+
     ASR.L   #3,D3
