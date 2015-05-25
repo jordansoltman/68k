@@ -133,9 +133,7 @@ sub_process_opcode_opf_sizes
 sub_process_opcode_tab
 
     MOVEM.L D0/D7/A0,-(SP)                  *Save the registers
-    MOVE.W  #TAB,-(SP)                      *Push a tab onto the stack
-    BSR     sub_build_char                  *Output out the tab
-    LEA     2(SP),SP                        *Reset the stack
+    BSR     sub_tab                         *Output out the tab
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     MOVE.W  (A0)+,D1                        *Move next keyword to D1
@@ -185,7 +183,7 @@ sub_process_opcode_types
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
     MOVE.L  D1,-(SP)                        *Put the value to the stack
     MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
-    MOVE.W  #byte_size,-(SP)                *Print it out as a byte
+    MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
     BSR     sub_build_hex_string            *Print out the value
     LEA     8(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
@@ -242,7 +240,7 @@ sub_process_opcode_types_cnt_reg
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
     MOVE.L  D1,-(SP)                        *Put the value to the stack
     MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
-    MOVE.W  #byte_size,-(SP)                *Print it out as a byte
+    MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
     BSR     sub_build_hex_string            *Print out the value
     LEA     8(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
@@ -319,18 +317,13 @@ sub_build_data
 
     CLR.W   output_string_displacement      *Reset the string displacement so we can write again
 
-
-    MOVEM.L     D0/A0,-(SP)                     *Save D0
     BSR         sub_build_current_line_address  *Print out the current line
-    MOVEM.L     (SP)+,D0/A0                     *Restore D0
 
     MOVE.L      #data_string,-(SP)          *Load the position of 'DATA' to the stack
     BSR         sub_build_string            *Output DATA
     LEA         4(SP),SP                    *Reset the stack pointer
 
-    MOVE.W      #TAB,-(SP)                  *Load a tab character
-    BSR         sub_build_char              *Output it
-    LEA         2(SP),SP                    *Reset the stack
+    BSR         sub_tab              *Output it
 
     MOVE.L      current_addr_backup,A0      *Get the backup address and put it in A0
     CLR.L       D0                          *Clear D0
@@ -373,9 +366,7 @@ sub_build_current_line_address
     BSR         sub_build_hex_string
     LEA         8(SP),SP
 
-    MOVE.W      #TAB,-(SP)
-    BSR         sub_build_char
-    LEA         2(SP),SP
+    BSR         sub_tab
 
     RTS
 
@@ -447,6 +438,10 @@ sub_build_hex_string
     ADD.W       D0,A0                                   *Adjust the address for the current displacement
     MOVE.W      sub_build_hex_string_size(SP),D1        *Get the size and save it in D1
     LSL.W       #1,D1                                   *Multiply by 2 because we defined bytes not digits
+    CMP.W       #nibble_size,D1                         *See if it's a nibble (represented by 0)
+    BNE         sub_build_hex_string_con                *If it's not skip the next step
+    MOVEQ       #1,D1                                   *Move a 1 on to represent a nibble
+sub_build_hex_string_con
     MOVE.W      D1,D4                                   *Copy the size for later
     MOVE.W      sub_build_hex_string_hex_flag(SP),D2    *Get immediate boolean and save in D2
     MOVE.L      sub_build_hex_string_value(SP),D3       *Get the value and save in D3
@@ -813,6 +808,33 @@ sub_build_string_comma_space
 
 **************************************************************
 *
+* sub_tab
+*
+* Adds a single comma to the string
+*
+sub_tab
+    MOVEA.L     #tab_stops,A0
+    MOVEA.L     #output_string,A1                   *Load the output string
+    MOVE.W      output_string_displacement,D1
+    ADD.W       D1,A1
+sub_tab_loop
+    MOVE.B      (A0)+,D0                            *D0 contains the next tab position
+    CMP.B       D1,D0                               *See if the displacement is past the tab
+    BLE         sub_tab_loop                        *If the tab is less than the current displacement find the next tab
+sub_tab_spc_loop
+    CMP.B       D1,D0                               *See if the displacement is past the tab
+    BLE         sub_tab_rts                         *If the tab is less than or equal to the displacement we are done
+    MOVE.B      #' ',(A1)+                          *Push a space onto the output string
+    ADDQ        #1,D1                               *Increment the displacement
+    BRA         sub_tab_spc_loop                    *Add another space
+sub_tab_rts     
+    MOVE.W      D1,output_string_displacement
+    RTS
+    
+              
+
+**************************************************************
+*
 * sub_handy_mask
 *
 * Given a value, lower bound, and size, this method will return the masked
@@ -858,6 +880,7 @@ sub_handy_mask_done
 true                EQU 1
 false               EQU 0
 
+nibble_size         EQU 0   *This representation cannot be used mathematically
 byte_size           EQU 1
 word_size           EQU 2
 long_size           EQU 4
@@ -1129,7 +1152,10 @@ CR EQU $0D
 LF EQU $0A
 TAB EQU $9
 
-*make program jump back to other opcodes if invalid flag set... maybe not
+tab_stops       DC.B    8,17,24
+
+*make program jump back to other opcodes if invalid flag set?
+
 
     * TEST PROGRAM * *BB88 eor bad*
 
