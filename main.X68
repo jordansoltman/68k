@@ -25,18 +25,14 @@ LOOP
     MOVE.W  (A0)+,D0                            *Move the opcode (or data) to D0 for processing
     MOVE.L  A0,current_addr                     *Update the current address to reflect the change
 
-    MOVEM.L D0/A0,-(SP)                         *Save D0
-    BSR     sub_build_current_line_address      *Print out the current line
-    MOVEM.L (SP)+,D0/A0                         *Restore D0
-
     MOVE.W  #op_codes,A1                        *Move the starting address for the opcodes to A1
 
 LOOP_OPCODES                                    *Begin to loop through the opcodes using A1
 
     MOVEA.W (A1)+,A2
-
-    CMP.L   #0,A2                               *Check to see if we are at the end of the opcodes list
-    BEQ     OUTPUT_DATA                          *If so we'll print data
+    
+    CMP.L   #0,A2                    *Check to see if we are at the end of the opcodes list
+    BEQ     OUTPUT_DATA                          *We didn't find a matching term
 
     MOVE.W  (A2)+,D2                            *Get the value
     MOVE.W  (A2)+,D1                            *Get the mask
@@ -45,20 +41,39 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     CMP.W   D1,D2                               *See if it's a match
 
     BNE     LOOP_OPCODES
+    
+LOOP_OPDEFS
 
-    MOVE.W  (A2)+,A2
+    MOVE.W  (A2)+,A3
 
-    PEA     (A2)
+    CMP.W   #op_code_term,A3
+    BEQ     OUTPUT_DATA
+    
+    CLR.W   output_string_displacement          *Reset the string displacement so we can write again
+    CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
+    MOVE.W  current_addr_backup,current_addr    *Reset the address to the current address
+    
+    MOVEM.L D0/A0,-(SP)                         *Save D0
+    BSR     sub_build_current_line_address      *Print out the current line address
+    MOVEM.L (SP)+,D0/A0                         *Restore D0
+
+    MOVEM.L A0-A3/D0-D2,-(SP)
+    MOVE.L  A3,-(SP)
     BSR     sub_process_opcode
     LEA     4(SP),SP
+    MOVEM.L (SP)+,A0-A3/D0-D2
 
-    CMP.B   #true,invalid_op_flag
-    BEQ     OUTPUT_DATA
-    BRA     OUTPUT
-
+    CMP.B   #false,invalid_op_flag
+    BEQ     OUTPUT
+    
+    MOVE.B  #false,invalid_op_flag
+    BRA     LOOP_OPDEFS
+    
 OUTPUT_DATA
+    MOVEM.L A0-A3/D0-D2,-(SP)
     BSR     sub_build_data
     BRA     OUTPUT
+    MOVEM.L (SP)+,A0-A3/D0-D2
 
 DONE
     SIMHALT             ; halt simulator
@@ -1085,184 +1100,196 @@ hex_characters  DC.B    '0123456789ABCDEF'
 
 print_blank         DC.B    0
 
+op_code_term        EQU     $FFFF
+op_codes_term       EQU     $0000
+
 
 op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
 op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
 op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls
 op_codes3       DC.W    op_code_asrm,op_code_aslm,op_code_lslm,op_code_lsrm,op_code_asr,op_code_asl,op_code_rolm,op_code_rorm,op_code_rol,op_code_ror,op_code_lsr,op_code_lsl **this order is strict
-op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,0
+op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,op_code_bclr,0
 
 ************** OP CODE DEFINITIONS ***************
 
 data_string     DC.B    'DATA',0
 
 op_string_lea   DC.B    'LEA',0
-op_code_lea     DC.W    $41C0,$F1C0,op_def_lea
-op_ea_lea_src   DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long
+op_code_lea     DC.W    $41C0,$F1C0,op_def_lea,op_code_term
+op_ea_lea_src   DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_lea      DC.W    op_string_lea,opf_size,long_size,opf_ea,op_ea_lea_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_eor   DC.B    'EOR',0
-op_code_eor     DC.W    $B100,$F100,op_def_eor
+op_code_eor     DC.W    $B100,$F100,op_def_eor,op_code_term
 op_ea_eor_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
 
 op_string_or    DC.B   'OR',0
-op_code_or      DC.W    $8000,$F000,op_def_or
+op_code_or      DC.W    $8000,$F000,op_def_or,op_code_term
 op_ea_or_src    DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_ea_or_dest   DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
 
 op_string_nop   DC.B    'NOP',0
-op_code_nop     DC.W    $4E71,$FFFF,op_def_nop
+op_code_nop     DC.W    $4E71,$FFFF,op_def_nop,op_code_term
 op_def_nop      DC.W    op_string_nop,opf_term
 
 op_string_adda  DC.B    'ADDA',0
-op_code_adda    DC.W    $D0C0,$F0C0,op_def_adda
+op_code_adda    DC.W    $D0C0,$F0C0,op_def_adda,op_code_term
 op_ea_adda_src  DC.B    ea_all
 op_def_adda     DC.W    op_string_adda,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_adda_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_movea DC.B    'MOVEA',0
-op_code_movea1  DC.W    $3040,$F1C0,op_def_movea    *Two different ways to define MOVEA
-op_code_movea2  DC.W    $2040,$F1C0,op_def_movea
+op_code_movea1  DC.W    $3040,$F1C0,op_def_movea,op_code_term    *Two different ways to define MOVEA
+op_code_movea2  DC.W    $2040,$F1C0,op_def_movea,op_code_term
 op_ea_movea_src DC.B    ea_all
 op_def_movea    DC.W    op_string_movea,opf_sizes,12,no_size,%11,%10,opf_ea,op_ea_movea_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_move  DC.B    'MOVE',0
-op_code_move1   DC.W    $1000,$F000,op_def_move     *Three different ways to define MOVE
-op_code_move2   DC.W    $2000,$F000,op_def_move
-op_code_move3   DC.W    $3000,$F000,op_def_move
+op_code_move1   DC.W    $1000,$F000,op_def_move,op_code_term     *Three different ways to define MOVE
+op_code_move2   DC.W    $2000,$F000,op_def_move,op_code_term
+op_code_move3   DC.W    $3000,$F000,op_def_move,op_code_term
 op_ea_move_src  DC.B    ea_all
 op_ea_move_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_move_src,3,0,opf_ea,op_ea_move_dest,6,9,opf_term
 
 op_string_neg   DC.B    'NEG',0
-op_code_neg     DC.W    $4400,$FF00,op_def_neg
+op_code_neg     DC.W    $4400,$FF00,op_def_neg,op_code_term
 op_ea_neg_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_neg      DC.W    op_string_neg,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_neg_dest,3,0,opf_term
 
 op_string_ori   DC.B    'ORI',0
-op_code_ori     DC.W    $0000,$FF00,op_def_ori
+op_code_ori     DC.W    $0000,$FF00,op_def_ori,op_code_term
 op_ea_ori_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_ori_dest,3,0,opf_term
 
 op_string_cmpi  DC.B    'CMPI',0
-op_code_cmpi    DC.W    $0C00,$FF00,op_def_cmpi
+op_code_cmpi    DC.W    $0C00,$FF00,op_def_cmpi,op_code_term
 op_ea_cmpi_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_cmpi     DC.W    op_string_cmpi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_cmpi_dest,3,0,opf_term
 
 op_string_rts   DC.B    'RTS',0
-op_code_rts     DC.W    $4E75,$FFFF,op_def_rts
+op_code_rts     DC.W    $4E75,$FFFF,op_def_rts,op_code_term
 op_def_rts      DC.W    op_string_rts,opf_term
 
 op_string_jsr   DC.B    'JSR',0
-op_code_jsr     DC.W    $4E80,$FFC0,op_def_jsr
+op_code_jsr     DC.W    $4E80,$FFC0,op_def_jsr,op_code_term
 op_ea_jsr_dest  DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_jsr      DC.W    op_string_jsr,opf_no_size,opf_ea,op_ea_jsr_dest,3,0,opf_term
 
 op_string_subq  DC.B    'SUBQ',0
-op_code_subq    DC.W    $5000,$F000,op_def_subq
+op_code_subq    DC.W    $5000,$F000,op_def_subq,op_code_term
 op_ea_subq_dest DC.B    ea_reg_dir,ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_subq     DC.W    op_string_subq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_subq_dest,3,0,opf_term
 
 op_string_divs  DC.B    'DIVS',0
-op_code_divs    DC.W    $81C0,$F1C0,op_def_divs
+op_code_divs    DC.W    $81C0,$F1C0,op_def_divs,op_code_term
 op_ea_divs_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_divs     DC.W    op_string_divs,opf_size,word_size,opf_ea,op_ea_divs_src,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_sub   DC.B    'SUB',0
-op_code_sub     DC.W    $9000,$F000,op_def_sub
+op_code_sub     DC.W    $9000,$F000,op_def_sub,op_code_term
 op_ea_sub_src   DC.B    ea_all
 op_ea_sub_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_sub_dest,3,0,opf_reg,9,ea_reg_dir,opf_flipped
 op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_sub_dest,3,0,opf_term
 
 op_string_cmp   DC.B    'CMP',0
-op_code_cmp     DC.W    $B000,$F100,op_def_cmp
+op_code_cmp     DC.W    $B000,$F100,op_def_cmp,op_code_term
 op_ea_cmp_src   DC.B    ea_all
 op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_cmp_src,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_muls  DC.B    'MULS',0
-op_code_muls    DC.W    $C000,$F000,op_def_muls
+op_code_muls    DC.W    $C000,$F000,op_def_muls,op_code_term
 op_ea_muls_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_muls     DC.W    op_string_muls,opf_size,word_size,opf_ea,op_ea_muls_src,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_add   DC.B    'ADD',0
-op_code_add     DC.W    $D000,$F000,op_def_add
+op_code_add     DC.W    $D000,$F000,op_def_add,op_code_term
 op_ea_add_src   DC.B    ea_all
 op_ea_add_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_add      DC.W    op_string_add,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_add_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped
 op_def_add_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_add_dest,3,0,opf_term
 
 op_string_asr   DC.B    'ASR',0
-op_code_asr     DC.W    $E000,$F118,op_def_asr
+op_code_asr     DC.W    $E000,$F118,op_def_asr,op_code_term
 op_def_asr      DC.W    op_string_asr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ASR operate differently for memory ***
 op_ea_asrm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_asrm    DC.W    $E0C0,$FFC0,op_def_asrm
+op_code_asrm    DC.W    $E0C0,$FFC0,op_def_asrm,op_code_term
 op_def_asrm     DC.W    op_string_asr,opf_size,word_size,opf_ea,op_ea_asrm,3,0,opf_term
 
 op_string_asl   DC.B    'ASL',0
-op_code_asl     DC.W    $E100,$F118,op_def_asl
+op_code_asl     DC.W    $E100,$F118,op_def_asl,op_code_term
 op_def_asl      DC.W    op_string_asl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ASL operate differently for memory ***
 op_ea_aslm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_aslm    DC.W    $E1C0,$FFC0,op_def_aslm
+op_code_aslm    DC.W    $E1C0,$FFC0,op_def_aslm,op_code_term
 op_def_aslm     DC.W    op_string_asl,opf_size,word_size,opf_ea,op_ea_aslm,3,0,opf_term
 
 op_string_ror   DC.B    'ROR',0
-op_code_ror     DC.W    $E018,$F118,op_def_ror
+op_code_ror     DC.W    $E018,$F118,op_def_ror,op_code_term
 op_def_ror      DC.W    op_string_ror,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ROR operate differently for memory ***
 op_ea_rorm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_rorm    DC.W    $E6C0,$FFC0,op_def_rorm
+op_code_rorm    DC.W    $E6C0,$FFC0,op_def_rorm,op_code_term
 op_def_rorm     DC.W    op_string_ror,opf_size,word_size,opf_ea,op_ea_rorm,3,0,opf_term
 
 op_string_rol   DC.B    'ROL',0
-op_code_rol     DC.W    $E118,$F118,op_def_rol
+op_code_rol     DC.W    $E118,$F118,op_def_rol,op_code_term
 op_def_rol      DC.W    op_string_rol,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ROL operate differently for memory ***
 op_ea_rolm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_rolm    DC.W    $E7C0,$FFC0,op_def_rolm
+op_code_rolm    DC.W    $E7C0,$FFC0,op_def_rolm,op_code_term
 op_def_rolm     DC.W    op_string_rol,opf_size,word_size,opf_ea,op_ea_rolm,3,0,opf_term
 
 op_string_lsr   DC.B    'LSR',0
-op_code_lsr     DC.W    $E008,$F118,op_def_lsr
+op_code_lsr     DC.W    $E008,$F118,op_def_lsr,op_code_term
 op_def_lsr      DC.W    op_string_lsr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for LSR operate differently for memory ***
 op_ea_lsrm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_lsrm    DC.W    $E2C0,$FFC0,op_def_lsrm
+op_code_lsrm    DC.W    $E2C0,$FFC0,op_def_lsrm,op_code_term
 op_def_lsrm     DC.W    op_string_lsr,opf_size,word_size,opf_ea,op_ea_lsrm,3,0,opf_term
 
 op_string_lsl   DC.B    'LSL',0
-op_code_lsl     DC.W    $E108,$F118,op_def_lsl
+op_code_lsl     DC.W    $E108,$F118,op_def_lsl,op_code_term
 op_def_lsl      DC.W    op_string_lsl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for LSL operate differently for memory ***
 op_ea_lslm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_code_lslm    DC.W    $E3C0,$FFC0,op_def_lslm
+op_code_lslm    DC.W    $E3C0,$FFC0,op_def_lslm,op_code_term
 op_def_lslm     DC.W    op_string_lsl,opf_size,word_size,opf_ea,op_ea_lslm,3,0,opf_term
 
 op_string_bra   DC.B    'BRA',0
-op_code_bra     DC.W    $6000,$FF00,op_def_bra
+op_code_bra     DC.W    $6000,$FF00,op_def_bra,op_code_term
 op_def_bra      DC.W    op_string_bra,opf_no_size,opf_disp,opf_term
 
 op_string_bcs   DC.B    'BCS',0
-op_code_bcs     DC.W    $6500,$FF00,op_def_bcs
+op_code_bcs     DC.W    $6500,$FF00,op_def_bcs,op_code_term
 op_def_bcs      DC.W    op_string_bcs,opf_no_size,opf_disp,opf_term
 
 op_string_bvc   DC.B    'BVC',0
-op_code_bvc     DC.W    $6800,$FF00,op_def_bvc
+op_code_bvc     DC.W    $6800,$FF00,op_def_bvc,op_code_term
 op_def_bvc      DC.W    op_string_bvc,opf_no_size,opf_disp,opf_term
 
 op_string_bge   DC.B    'BGE',0
-op_code_bge     DC.W    $6C00,$FF00,op_def_bge
+op_code_bge     DC.W    $6C00,$FF00,op_def_bge,op_code_term
 op_def_bge      DC.W    op_string_bge,opf_no_size,opf_disp,opf_term
 
 op_string_blt   DC.B    'BLT',0
-op_code_blt     DC.W    $6D00,$FF00,op_def_blt
+op_code_blt     DC.W    $6D00,$FF00,op_def_blt,op_code_term
 op_def_blt      DC.W    op_string_blt,opf_no_size,opf_disp,opf_term
 
+op_string_bclr  DC.B    'BCLR',0
+
+op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrl,op_def_bclrb,op_code_term
+op_ea_bclrl     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
+op_ea_bclrb     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings                                        
+op_def_bclrl    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrl,3,0,opf_term      
+op_def_bclrb    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrb,3,0,opf_term      
+
+
 op_string_movem DC.B    'MOVEM',0
-op_code_movem   DC.W    $4880,$FB80,op_def_movem
+op_code_movem   DC.W    $4880,$FB80,op_def_movem,op_code_term
 op_ea_movem_rtm DC.B    ea_ari,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_ea_movem_mtr DC.B    ea_ari,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term 
 op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_flip,10,opf_sub,sub_op_movem_rev,opf_ea,op_ea_movem_rtm,3,0
@@ -1283,39 +1310,39 @@ sub_op_movem_loop
     CMP.B       #16,D2                  *See if we are done going through the registers         
     BGE         sub_op_movem_rts        *If we are done return control
     CMP.B       #false,D7               *Check the direction
-    BNE         sub_op_movem_loop_lsl   
-    LSR.W       #1,D1
-    BRA         sub_op_movem_loop_output
+    BNE         sub_op_movem_loop_lsl   *Go left
+    LSR.W       #1,D1                   *Push off the right
+    BRA         sub_op_movem_loop_output  *Start loop
 sub_op_movem_loop_lsl
-    LSL.W       #1,D1
+    LSL.W       #1,D1                   *Shift left
 sub_op_movem_loop_output
-    BCC         sub_op_movem_chk
-    MOVE.L      D2,D3
-    DIVU        #8,D3
-    SWAP        D3 
-    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP)
-    MOVE.W      D6,-(SP)
-    MOVE.W      D3,-(SP)
-    MOVE.W      #no_size,-(SP)
-    BSR         sub_build_ea_string
-    LEA         6(SP),SP
-    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7
-    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP)
-    MOVE.W      #'/',-(SP)
-    BSR         sub_build_char
-    LEA         2(SP),SP
-    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7
+    BCC         sub_op_movem_chk        *See if the bit that was shifted off was set
+    MOVE.L      D2,D3                   *Copy the counter
+    DIVU        #8,D3                   *Mod it with 8 to get the reg number
+    SWAP        D3                      *Swap it to put the mod in the right word
+    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP) *Backup registers
+    MOVE.W      D6,-(SP)                *Push the register mode onto the stack
+    MOVE.W      D3,-(SP)                *Push the register number on
+    MOVE.W      #no_size,-(SP)          *We don't care about the size for these modes
+    BSR         sub_build_ea_string     *Build the register
+    LEA         6(SP),SP                *Reset the pointer
+    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7 *Restore the registers
+    MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP) *Backup the registers
+    MOVE.W      #'/',-(SP)              *Move the slash on
+    BSR         sub_build_char          *Build it
+    LEA         2(SP),SP                *Reset the pointer
+    MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7 *Restore the registers
 sub_op_movem_chk
-    CMP.B       #7,D2
-    BNE         sub_op_movem_inc
-    MOVE.W      #ea_add_dir,D6
+    CMP.B       #7,D2                   *See if we need to switch to address mode
+    BNE         sub_op_movem_inc        *If not we'll increment and continue
+    MOVE.W      #ea_add_dir,D6          *Set the mode to address mode
 sub_op_movem_inc
-    ADDQ.B      #1,D2
-    BRA         sub_op_movem_loop
+    ADDQ.B      #1,D2                   *Increment the counter
+    BRA         sub_op_movem_loop       *Branch back to the loop
 sub_op_movem_rts
-    MOVE.W      #BS,-(SP)
-    BSR         sub_build_char
-    LEA         2(SP),SP
+    MOVE.W      #BS,-(SP)               *Request a backspace (we need to solve the fence post problem with the '/'s)
+    BSR         sub_build_char          *Go back
+    LEA         2(SP),SP                *Restore the pointers
     RTS
 
 CR EQU $0D
@@ -1331,10 +1358,13 @@ tab_stops       DC.B    8,17,24
     * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+    BCLR    D0,(A0)
+    BCLR    D0,D3
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
     MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
     BRA     $2FFE
     BLT     $3005
+c   DC.W    $FF00
     BGE     $3008
     BVC     $3922
     BCS     $2323
