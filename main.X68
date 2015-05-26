@@ -1108,7 +1108,7 @@ op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_cod
 op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
 op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls
 op_codes3       DC.W    op_code_asrm,op_code_aslm,op_code_lslm,op_code_lsrm,op_code_asr,op_code_asl,op_code_rolm,op_code_rorm,op_code_rol,op_code_ror,op_code_lsr,op_code_lsl **this order is strict
-op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,op_code_bclr,0
+op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,op_code_bclr,op_code_bclr2,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1281,11 +1281,39 @@ op_def_blt      DC.W    op_string_blt,opf_no_size,opf_disp,opf_term
 
 op_string_bclr  DC.B    'BCLR',0
 
-op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrl,op_def_bclrb,op_code_term
-op_ea_bclrl     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
-op_ea_bclrb     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings                                        
-op_def_bclrl    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrl,3,0,opf_term      
-op_def_bclrb    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrb,3,0,opf_term      
+op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrL,op_def_bclrB,op_code_term
+op_ea_bclrL     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
+op_ea_bclrB     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings                                        
+op_def_bclrL    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrL,3,0,opf_term      
+op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrB,3,0,opf_term      
+
+* Seperate code for BCLR with immediate data
+op_code_bclr2   DC.W    $0880,$FFC0,op_def_bclrL2,op_def_bclrB2,op_code_term   
+op_def_bclrL2   DC.W    op_string_bclr,opf_size,long_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrL,3,0,opf_term
+op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrB,3,0,opf_term
+
+sub_op_bclr
+    MOVE.W  #'#',-(SP)          *Push the pound sign to the stack
+    BSR     sub_build_char      *Output the hex
+    LEA     2(SP),SP            *Reset the stack
+
+    MOVE.W  #word_size,-(SP)    *We need the word
+    BSR     sub_get_next_abs    *Get the next absolute to D1
+    LEA     2(SP),SP            *Reset the pointer
+    
+    MOVE.L  D1,D0               *Put the value in D0 for handy mask
+    MOVE.W  #0,-(SP)            *We want the byte at index 0
+    MOVE.W  #8,-(SP)            *And we want the whole byte
+    BSR     sub_handy_mask      *Get the value to D1
+    LEA     4(SP),SP            *Reset the stack pointer
+    
+    MOVE.L  D1,-(SP)            *Put the number on the stack
+    MOVE.W  #true,-(SP)         *We want it to print the boolean
+    MOVE.W  #byte_size,-(SP)    *It will always be a byte
+    BSR     sub_build_hex_string    *Build the string
+    LEA     8(SP),SP            *Reset the stack pointer 
+    
+    RTS
 
 
 op_string_movem DC.B    'MOVEM',0
@@ -1360,6 +1388,7 @@ tab_stops       DC.B    8,17,24
     ORG     $3000
     BCLR    D0,(A0)
     BCLR    D0,D3
+    BCLR    #255,D0
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
     MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
     BRA     $2FFE
@@ -1407,6 +1436,7 @@ tst ROR.W   (A0)+
 
 
     END    START        ; last line of source
+
 
 
 
