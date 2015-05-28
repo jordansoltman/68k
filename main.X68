@@ -154,8 +154,36 @@ sub_process_opcode
     LEA     4(SP),SP                        *Reset the stack pointer
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
     
-    MOVEA.L #conditions,A1                  *Load the conditions
+    MOVE.W  (A0)+,D2                        *Get the boolean to determine if we should include true and false
+    CMP.W   #false,D2                       *Check if it's false
+    BEQ     sub_process_opcode_skip_tf      *If it is we'll skip tf
     
+    MOVEA.L #conditions,A1                  *Otherwise load all the conditions
+    
+    BRA     sub_process_opcode_check_cond   *Jump to check the condition
+    
+sub_process_opcode_skip_tf
+    
+    MOVEA.L #conditions_stf,A1              *Load the conditions without true and false
+    
+sub_process_opcode_check_cond
+    
+    MOVE.W  (A1)+,D2                        *Store the condition code to D2
+    CMP.W   #cond_term,D2                   *See if it's the 
+    BEQ     sub_process_opcode_rts_invalid  *It must be an invalid condition type because we've run out of options
+    
+    MOVE.W  (A1)+,D3                        *Get the address of the condition string
+    
+    CMP.W   D2,D1                           *see if the current condition is the right one
+    BNE     sub_process_opcode_check_cond   *Go back through the loop
+    
+    MOVEM.L D0/A0,-(SP)                     *Backup the registers
+    MOVE.L  D3,-(SP)                        *Put the string address on the stack
+    BSR     sub_build_string                *Build the condition code
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
+    
+    MOVE.W  (A0)+,D1                        *Get the next token to hanle size or opf_term
 
 sub_process_opcode_check_size    
 
@@ -424,6 +452,10 @@ sub_process_opcode_types_next
     MOVEM.L (SP)+,A0/D0/D7                  *Restore the registers
 
     BRA     sub_process_opcode_back_types   *Go back and get start again
+    
+sub_process_opcode_rts_invalid
+
+    MOVE.B  #true,invalid_op_flag           *Set the invalid op flag to true
 
 sub_process_opcode_rts
     BSR     sub_build_finish                *Put the terminating character on the string
@@ -1189,8 +1221,27 @@ op_codes_term       EQU     $0000
 
 ******** CONDITIONS ARRAY *********
 
-conditions      DC.W    %0000,'RA',%0010,'HI',%0011,'LS',%0100,'CC',%0101,'CS',%0110,'NE',%0111,'EQ',%1000,'VC',%1001,'VS'
-                DC.W    %1010,'PL',%1011,'MI',%1100,'GE',%1101,'LT',%1110,'GT',%1111,'LE',cond_term
+cond_t          DC.B    'T',0
+cond_f          DC.B    'F',0
+cond_hi         DC.B    'HI',0
+cond_ls         DC.B    'LS',0
+cond_cc         DC.B    'CC',0
+cond_cs         DC.B    'CS',0
+cond_ne         DC.B    'NE',0
+cond_eq         DC.B    'EQ',0
+cond_vc         DC.B    'VC',0
+cond_vs         DC.B    'VS',0
+cond_pl         DC.B    'PL',0
+cond_mi         DC.B    'MI',0
+cond_ge         DC.B    'GE',0
+cond_lt         DC.B    'LT',0
+cond_gt         DC.B    'GT',0
+cond_le         DC.B    'LE',0
+
+conditions      DC.W    %0000,cond_t,%0001,cond_f
+* stf (no true false) allows skipping of true and false
+conditions_stf  DC.W    %0010,cond_hi,%0011,cond_ls,%0100,cond_cc,%0101,cond_cs,%0110,cond_ne,%0111,cond_eq,%1000,cond_vc
+                DC.W    %1001,cond_vs,%1010,cond_pl,%1011,cond_mi,%1100,cond_ge,%1101,cond_lt,%1110,cond_gt,%1111,cond_le,cond_term
 
 ******** OPCODES ARRAY ***********
 * An array of opcodes (starting with 'op_codes') that will be tested
@@ -1198,13 +1249,13 @@ conditions      DC.W    %0000,'RA',%0010,'HI',%0011,'LS',%0100,'CC',%0101,'CS',%
 
 op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
                 DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
-                DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bge,op_code_blt
+                DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bcc
                 DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
-                DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bcs,op_code_bvc,op_code_bclr
+                DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bclr
 op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_code_subi,op_code_suba,op_code_rtr,op_code_pea
                 DC.W    op_code_not,op_code_negx,op_code_nbcd,op_code_mulu,op_code_movesr,op_code_moveccr,op_code_jmp
                 DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
-                DC.W    0
+                DC.W    op_code_scc,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1359,21 +1410,10 @@ op_string_bra   DC.B    'BRA',0
 op_code_bra     DC.W    $6000,$FF00,op_def_bra,op_code_term
 op_def_bra      DC.W    op_string_bra,opf_no_size,opf_disp,opf_term
 
-op_string_bcs   DC.B    'BCS',0
-op_code_bcs     DC.W    $6500,$FF00,op_def_bcs,op_code_term
-op_def_bcs      DC.W    op_string_bcs,opf_no_size,opf_disp,opf_term
+op_string_bcc   DC.B    'B',0
+op_code_bcc     DC.W    $6000,$F000,op_def_bcc,op_code_term
+op_def_bcc      DC.W    op_string_bcc,opf_cond,8,false,opf_no_size,opf_disp,opf_term
 
-op_string_bvc   DC.B    'BVC',0
-op_code_bvc     DC.W    $6800,$FF00,op_def_bvc,op_code_term
-op_def_bvc      DC.W    op_string_bvc,opf_no_size,opf_disp,opf_term
-
-op_string_bge   DC.B    'BGE',0
-op_code_bge     DC.W    $6C00,$FF00,op_def_bge,op_code_term
-op_def_bge      DC.W    op_string_bge,opf_no_size,opf_disp,opf_term
-
-op_string_blt   DC.B    'BLT',0
-op_code_blt     DC.W    $6D00,$FF00,op_def_blt,op_code_term
-op_def_blt      DC.W    op_string_blt,opf_no_size,opf_disp,opf_term
 
 op_string_bclr  DC.B    'BCLR',0
 
@@ -1582,7 +1622,10 @@ op_string_bsr       DC.B    'BSR',0
 op_code_bsr         DC.W    $6100,$FF00,op_def_bsr,op_code_term
 op_def_bsr          DC.W    op_string_bsr,opf_no_size,opf_disp,opf_term
 
-
+op_string_scc       DC.B    'S',0
+op_code_scc         DC.W    $50C0,$F0C0,op_def_scc,op_code_term
+op_ea_scc           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_scc          DC.W    op_string_scc,opf_cond,8,true,opf_no_size,opf_ea,op_ea_scc,3,0,opf_term
 
 
 
@@ -1595,6 +1638,33 @@ BS  EQU $8
 
 
     ORG     $3000
+    BRA     op_string_scc
+    BCC     op_string_scc
+    BCS     op_string_scc
+    BEQ     op_string_scc
+    BGE     op_string_scc
+    BGT     op_string_scc
+    BHI     op_string_scc
+    BLE     op_string_scc
+    BLS     op_string_scc
+    BLT     op_string_scc
+    BMI     op_string_scc
+    BNE     op_string_scc
+    BPL     op_string_scc
+    BVC     op_string_scc
+    BVS     op_string_scc
+    SGE     D4
+    SGT     D5
+    SHI     D6
+    SLE     D7
+    SLS     D0
+    SLT     D1
+    SMI     D2
+    SNE     D3
+    SPL     D4
+    ST      D5
+    SVC     D6
+    SVS     D7
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
     UNLK    A3
     CMPM.B (A0)+,(A2)+
