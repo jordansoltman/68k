@@ -8,16 +8,23 @@
     ORG    $1000
 
 srt_addr  EQU     $3000
-end_addr  EQU     $3040
+end_addr  EQU     $3100
 
 START
     MOVE.L  #srt_addr,current_addr              *Load the starting address
+    MOVE.B  #0,D3                               *We will use D3 as a counter for line output
+    
 LOOP
     MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
     MOVEA.L current_addr,A0                     *Load the current address to A0
 
     CMP.L   #end_addr,A0                        *See if we are at the end address
     BGE     DONE                                *If so branch to done
+    
+    CMP.B   #31,D3                              *See if we have maxed out the output
+    BGE     WAIT                                *If so we'll wait for the enter key
+    
+    ADDQ.B  #1,D3                               *Increment the counter by one
 
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
     CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
@@ -30,9 +37,9 @@ LOOP
 LOOP_OPCODES                                    *Begin to loop through the opcodes using A1
 
     MOVEA.W (A1)+,A2
-    
-    CMP.L   #0,A2                    *Check to see if we are at the end of the opcodes list
-    BEQ     OUTPUT_DATA                          *We didn't find a matching term
+
+    CMP.L   #0,A2                               *Check to see if we are at the end of the opcodes list
+    BEQ     OUTPUT_DATA                         *We didn't find a matching term so we'll output data instead
 
     MOVE.W  (A2)+,D2                            *Get the value
     MOVE.W  (A2)+,D1                            *Get the mask
@@ -40,49 +47,64 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     AND.W   D0,D1                               *Mask the opcode value
     CMP.W   D1,D2                               *See if it's a match
 
-    BNE     LOOP_OPCODES
-    
+    BNE     LOOP_OPCODES                        *Try the next opcode
+
 LOOP_OPDEFS
 
-    MOVE.W  (A2)+,A3
+    MOVE.W  (A2)+,A3                            
 
-    CMP.W   #op_code_term,A3
-    BEQ     OUTPUT_DATA
-    
+    CMP.W   #op_code_term,A3                    *See if we are at the end of the opcode
+    BEQ     LOOP_OPCODES                        *If so we'll continue trying other opcodes
+
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
     CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
     MOVE.W  current_addr_backup,current_addr    *Reset the address to the current address
-    
-    MOVEM.L D0/A0,-(SP)                         *Save D0
+
+    MOVEM.L D0-D3/A0-A2,-(SP)                   *Save D0
     BSR     sub_build_current_line_address      *Print out the current line address
-    MOVEM.L (SP)+,D0/A0                         *Restore D0
+    MOVEM.L (SP)+,D0-D3/A0-A2                   *Restore D0
 
-    MOVEM.L A0-A3/D0-D2,-(SP)
-    MOVE.L  A3,-(SP)
-    BSR     sub_process_opcode
-    LEA     4(SP),SP
-    MOVEM.L (SP)+,A0-A3/D0-D2
+    MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers  
+    MOVE.L  A3,-(SP)                            *Move the address of the opcode definition to the stack
+    BSR     sub_process_opcode                  *Process the opcode
+    LEA     4(SP),SP                            *Reset the stack pointer
+    MOVEM.L (SP)+,A0-A3/D0-D3                   *Restore the registers
 
-    CMP.B   #false,invalid_op_flag
-    BEQ     OUTPUT
-    
-    MOVE.B  #false,invalid_op_flag
-    BRA     LOOP_OPDEFS
-    
+    CMP.B   #false,invalid_op_flag              *See if the invalid flag was set
+    BEQ     OUTPUT                              *If it wasn't we'll go ahead and output
+
+    MOVE.B  #false,invalid_op_flag              *Reset the stack pointer
+    BRA     LOOP_OPDEFS                         *Try the next definition
+
 OUTPUT_DATA
-    MOVEM.L A0-A3/D0-D2,-(SP)
-    BSR     sub_build_data
-    BRA     OUTPUT
-    MOVEM.L (SP)+,A0-A3/D0-D2
+    MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers
+    BSR     sub_build_data                      *Build ouput [ADDR]   DATA    $[DATA]
+    MOVEM.L (SP)+,A0-A3/D0-D3                   *Restore the registers
+    BRA     OUTPUT                              *Go output the string
+    
+WAIT
+
+    LEA     queue_press_enter,A1                *Load the press enter message
+    MOVEQ   #14,D0                              *Setup for outputing a string
+    TRAP    #15                                 *Output the string
+    
+    MOVE.L  #END,A1                             *Point A1 at the end of the program so that any input is dumped
+    
+    MOVEQ   #2,D0                               *Setup to input a string
+    TRAP    #15                                 *Input a string
+    
+    MOVEQ   #0,D3                               *Reset the line counter
+    
+    BRA     LOOP                                *Return to our master loop
 
 DONE
     SIMHALT             ; halt simulator
 
 OUTPUT
-    LEA     output_string,A1
-    MOVEQ   #13,D0
-    TRAP    #15
-    BRA     LOOP
+    LEA     output_string,A1                    *Get the output string and put it in A1
+    MOVEQ   #13,D0                              *Setup for output with no CR/LF 
+    TRAP    #15                                 *Output
+    BRA     LOOP                                *Return to the master loop
 
 
 **************************************************************
@@ -102,12 +124,12 @@ sub_process_opcode
     MOVE.W  (A0)+,D1                        *Get opcode name address
 
     **** Print opcode name
-    MOVEM.L D0/A0,-(SP)
+    MOVEM.L D0/A0,-(SP)                     *Backup the registers to the stack
     MOVE.L  D1,-(SP)                        *Push string name onto the stack for printing
     BSR     sub_build_string                *Build the string
     LEA     4(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/A0
-
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
+    
     MOVE.W  (A0)+,D1                        *Get the size type or terminating opf
 
     CMP.W   #opf_term,D1                    *See if we have terminated
@@ -131,12 +153,12 @@ sub_process_opcode_opf_sizes
 
     MOVEM.L D0/A0,-(SP)                     *Save the registers
 
-    MOVE.W  D2,-(SP)
-    MOVE.W  D3,-(SP)
-    MOVE.W  D4,-(SP)
-    MOVE.W  D5,-(SP)
+    MOVE.W  D2,-(SP)                        *Put the size on the stack
+    MOVE.W  D3,-(SP)                        *Put the byte size info on the stack
+    MOVE.W  D4,-(SP)                        *Put the word size info on the stack
+    MOVE.W  D5,-(SP)                        *Put the long size info on the stack
 
-    BSR     sub_build_op                    *Build the size operand
+    BSR     sub_check_build_op              *Build the size operand
     LEA     8(SP),SP                        *Reset the stack pointer
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
 
@@ -155,7 +177,7 @@ sub_process_opcode_tab
 
     CMP.W   #opf_term,D1                    *See if this code is done
     BEQ     sub_process_opcode_rts          *If so we are done
-    
+
     CMP.W   #opf_flip,D1                    *See if the flip bit is set
     BNE     sub_process_opcode_back_types   *If not we'll skip to types
 
@@ -180,7 +202,7 @@ sub_process_opcode_types
     BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
 
     ** code for count
-    
+
     MOVE.W  (A0)+,D1                        *Get the immediate count value
 
     MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
@@ -210,22 +232,22 @@ sub_process_opcode_types_reg
 
     CMP.W   #opf_reg,D1
     BNE     sub_process_opcode_types_cnt_reg
-    
+
     ** code for reg
 
-sub_process_opcode_types_reg_qwk               *Quick access to reg
+sub_process_opcode_types_reg_qwk            *Quick access to reg
 
     MOVE.W  (A0)+,D1                        *Get starting bit position
     MOVE.W  (A0)+,D2                        *Get register mode (ea_reg_dir | ea_add_dir)
 
-    MOVEM.L D0/D7/A0,-(SP)                     *Backup the registers
+    MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
 
     MOVE.W  D2,-(SP)                        *Push mode bit position onto the stack
     MOVE.W  D1,-(SP)                        *Push register bit position onto the stack
     BSR     sub_build_direct_string         *Build the address or data register
     LEA     4(SP),SP                        *Reset the stack pointer
 
-    MOVEM.L (SP)+,D0/D7/A0                     *Restore the registers
+    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     BRA     sub_process_opcode_types_next   *Go to the next statement
 
@@ -313,9 +335,9 @@ sub_process_opcode_types_ea
     LEA     10(SP),SP                       *Reset the pointer
 
     MOVEM.L (SP)+,A0/D0/D7                  *Reset the pointer
-    
+
     BRA     sub_process_opcode_types_next
-    
+
 sub_process_opcode_types_disp
 
     CMP.W   #opf_disp,D1                    *See if it's a displacement
@@ -326,24 +348,24 @@ sub_process_opcode_types_disp
     MOVE.W  #8,-(SP)
     BSR     sub_handy_mask
     LEA     4(SP),SP
-    MOVEM.L (SP)+,D0/A0 
+    MOVEM.L (SP)+,D0/A0
 
     MOVEM.L D0/A0,-(SP)
     MOVE.W  D1,-(SP)
     BSR     sub_build_displacement
     LEA     2(SP),SP
-    MOVEM.L (SP)+,D0/A0 
-    
+    MOVEM.L (SP)+,D0/A0
+
     BRA     sub_process_opcode_types_next
-    
-        
+
+
 sub_process_opcode_types_sub
-    
+
     MOVE.W  (A0)+,A1
-    
+
     MOVEM.L D1/D0/A0,-(SP)
     JSR     (A1)
-    MOVEM.L (SP)+,D1/D0/A0 
+    MOVEM.L (SP)+,D1/D0/A0
 
 sub_process_opcode_types_next
 
@@ -444,7 +466,7 @@ sub_build_char
     MOVE.W      output_string_displacement,D0   *Load current displacement to D0
     ADD.W       D0,A0                           *Adjust the address for the current displacement
     MOVE.W      sub_build_char_ascii(SP),D1
-    
+
     CMP.W       #BS,D1                          *See if it's a backspace
     BNE         sub_build_char_output           *If not output the char
     SUBQ        #byte_size,D0                   *Otherwise subtract one from our displacement
@@ -593,33 +615,33 @@ sub_build_ea_string_reg
     ADD.W       D0,A0                               *Adjust the address for the current displacement
     CMP.W       #ea_ari_pre,D1                      *Check if ARI with predecrement
     BNE         sub_build_ea_string_open_paren      *If not go to next step
-    MOVE.B      #const_print_minus,(A0)+            *Output minus sign
+    MOVE.B      #'-',(A0)+            *Output minus sign
     ADDQ.W      #1,D0                               *Increase the displacement by one
 sub_build_ea_string_open_paren
     CMP.W       #ea_ari,D1                          *Check against modes that need open paren
     BLT         sub_build_ea_string_reg_type        *If DN or AN skip parens
-    MOVE.B      #const_print_open_paren,(A0)+       *Otherwise add an opening paren
+    MOVE.B      #'(',(A0)+       *Otherwise add an opening paren
     ADDQ.W      #1,D0                               *Increment displacement
     BRA         sub_build_ea_string_reg_type_a      *Branch to A output (must be because only addresses have paren)
 sub_build_ea_string_reg_type
     CMP.W       #ea_reg_dir,D1                      *Check if this is a register (DN)
     BNE         sub_build_ea_string_reg_type_a      *If not branch to print out an A instead
-    MOVE.B      #const_print_d,(A0)+                *Add 'D' to string
+    MOVE.B      #'D',(A0)+                *Add 'D' to string
     ADDQ.W      #1,D0                               *Increase the displacement by one
     BRA         sub_build_ea_string_reg_num         *Branch to adding address number
 sub_build_ea_string_reg_type_a
-    MOVE.B      #const_print_a,(A0)+                *Add 'A' to string
+    MOVE.B      #'A',(A0)+                *Add 'A' to string
     ADDQ.W      #1,D0                               *Increase the displacement by one
 sub_build_ea_string_reg_num
     MOVE.B      (0,A1,D2.W),(A0)+                   *Move our number into the string via the hex_string const
     ADDQ.W      #1,D0                               *Increase the displacement by one
     CMP.W       #ea_ari,D1                          *See if we need an close paren
     BLT         sub_build_ea_string_rts             *If we don't we are done
-    MOVE.B      #const_print_close_paren,(A0)+      *Add the closing paren
+    MOVE.B      #')',(A0)+      *Add the closing paren
     ADDQ.W      #1,D0                               *Increase the displacement by one
     CMP.W       #ea_ari_post,D1                     *Check if we need a plus sign
     BNE         sub_build_ea_string_rts             *If not we are done
-    MOVE.B      #const_print_plus,(A0)+             *Add plus sign to string
+    MOVE.B      #'+',(A0)+             *Add plus sign to string
     ADDQ.W      #1,D0                               *Increase the displacement by one
 sub_build_ea_string_rts
     MOVE.W      D0,output_string_displacement       *Update the displacement for the string
@@ -728,78 +750,81 @@ sub_build_displacement_output
 
 **************************************************************
 *
-* sub_build_op
+* sub_check_build_op
 *
-* Adds an EA to the string
+* This routine first grabs the 2 bits at the position specified in 'Bit position'. It then checks
+* to see if each bit couple matches the provided definitions in 'Byte value', 'Word value', and
+* 'Long value'. If it matches one of those it prints out the resulting character ('B', 'W', or 'L')
+* and returns the size (byte_size, word_size, long_size) via D1. If it does not match any of the
+* provided patterns, then it is considered to be invalid and the invalid_op_flag is set true and
+* the method will return.
 *
 * Stack Parameters:
-* 1 (L): Opcode string address
-* 2 (W): Bit position for size
-* 3 (W): Byte value
-* 4 (W): Word value
-* 5 (W): Long value
+* 1 (W): Bit position for size
+* 2 (W): Byte value
+* 3 (W): Word value
+* 4 (W): Long value
+*
+* The vaules should be specified as sets of two bits, e.g. %00 for byte %01 for word and %11 for long
 *
 * Register Parameters:
-* 1 (L): D0 should contain the current op code
+* 1 (L): D0 should contain the current op code that will be parsed
 *
 * Return
-* 1 (W): Size of the operation
+* 1 (W): Size of the operation as byte_size, word_size, or long_size
 
     OFFSET 4
-sub_build_op_long_val    DS.W    1
-sub_build_op_word_val    DS.W    1
-sub_build_op_byte_val    DS.W    1
-sub_build_op_position    DS.W    1
+sub_check_build_op_long_val    DS.W    1
+sub_check_build_op_word_val    DS.W    1
+sub_check_build_op_byte_val    DS.W    1
+sub_check_build_op_position    DS.W    1
     ORG *
 
-sub_build_op
+sub_check_build_op
 
-    CMP.B   #no_size,sub_build_op_position(SP)
-    BEQ     sub_build_op_print
+    MOVE.W  sub_check_build_op_position(SP),D1          *Put the bit position in D1
 
-    MOVE.W  sub_build_op_position(SP),D1
+    MOVE.W  D1,-(SP)                                    *Push bit position onto the stack
+    MOVE.W  #2,-(SP)                                    *Size is determined by 2 bits so we'll put 2 on the stack
+    BSR     sub_handy_mask                              *Get the 2 bits at that bit position to D1
+    LEA     4(SP),SP                                    *Reset the stack pointer
 
-    MOVE.W  D1,-(SP)
-    MOVE.W  #2,-(SP)
-    BSR     sub_handy_mask
-    LEA     4(SP),SP
+    MOVEM.L D1,-(SP)                                    *Backup the value
+    MOVE.W  #'.',-(SP)                                  *Push a period onto the stack
+    BSR     sub_build_char                              *Put the period on the output string
+    LEA     2(SP),SP                                    *Reset the stack pointer
+    MOVEM.L (SP)+,D1                                    *Restore D1
 
-    MOVEM.L D1,-(SP)
-    MOVE.W  #'.',-(SP)
-    BSR     sub_build_char
-    LEA     2(SP),SP
-    MOVEM.L (SP)+,D1
+    MOVE.W  sub_check_build_op_byte_val(SP),D5          *Get the byte value
+    MOVE.W  sub_check_build_op_word_val(SP),D6          *Get the word value
+    MOVE.W  sub_check_build_op_long_val(SP),D7          *Get the long value
 
-    MOVE.W  sub_build_op_byte_val(SP),D5
-    MOVE.W  sub_build_op_word_val(SP),D6
-    MOVE.W  sub_build_op_long_val(SP),D7
-
-    CMP.B   D5,D1
-    BNE     sub_build_op_word
-    MOVE.B  #'B',D3
-    MOVE.W  #byte_size,D4
-    BRA     sub_build_op_print
-sub_build_op_word
-    CMP.B   D6,D1
-    BNE     sub_build_op_long
-    MOVE.B  #'W',D3
-    MOVE.W  #word_size,D4
-    BRA     sub_build_op_print
-sub_build_op_long
-    CMP.B   D7,D1
-    BNE     sub_build_op_flag_invalid
-    MOVE.B  #'L',D3
-    MOVE.W  #long_size,D4
-sub_build_op_print
-    MOVE.W  D3,-(SP)
-    BSR     sub_build_char
-    LEA     2(SP),SP
-sub_build_op_rts
-    MOVE.W  D4,D1
+    CMP.B   D5,D1                                       *See if the byte value matches the bit value
+    BNE     sub_check_build_op_word                     *If not we'll see if it's a word
+    MOVE.B  #'B',D3                                     *If it is we'll put 'B' in D3 for printing
+    MOVE.W  #byte_size,D4                               *Set our size as byte size
+    BRA     sub_check_build_op_print                    *Branch to print out
+sub_check_build_op_word
+    CMP.B   D6,D1                                       *See if we match the word definition
+    BNE     sub_check_build_op_long                     *If not we'll check long
+    MOVE.B  #'W',D3                                     *If so we'll put a 'W' in D3 for printing later
+    MOVE.W  #word_size,D4                               *Set our size to word size
+    BRA     sub_check_build_op_print                    *Go print it
+sub_check_build_op_long
+    CMP.B   D7,D1                                       *See if it is a word size
+    BNE     sub_check_build_op_flag_invalid             *If not, then it is an invalid size
+    MOVE.B  #'L',D3                                     *If so we'll push an 'L' to D3 for printing
+    MOVE.W  #long_size,D4                               *Put long_size in D4
+sub_check_build_op_print
+    MOVE.W  D3,-(SP)                                    *Push the character (stored in D3) onto the stack
+    BSR     sub_build_char                              *Build the char to the output string
+    LEA     2(SP),SP                                    *Reset the stack pointer
+sub_check_build_op_rts
+    MOVE.W  D4,D1                                       *Move the size into D1 for returning
     RTS
-sub_build_op_flag_invalid
-    MOVE.B  #true,invalid_op_flag
-    BRA     sub_build_op_rts
+sub_check_build_op_flag_invalid
+    MOVE.B  #true,invalid_op_flag                       *Set the invalid op flag to true since the size was invalid
+    BRA     sub_check_build_op_rts                      *Branch to the return
 
 
 
@@ -978,6 +1003,8 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
+tab_stops       DC.B    8,17,24
+
 true                EQU 1
 false               EQU 0
 
@@ -1076,15 +1103,6 @@ opf_no_size     EQU     11
 
 opf_term        EQU      12
 
-const_print_space       EQU   ' '
-const_print_hex_sym     EQU   '$'
-const_print_pound_sym   EQU   '#'
-const_print_open_paren  EQU   '('
-const_print_close_paren EQU   ')'
-const_print_plus        EQU   '+'
-const_print_minus       EQU   '-'
-const_print_a           EQU   'A'
-const_print_d           EQU   'D'
 
 ******* STORAGE **********
 
@@ -1096,6 +1114,8 @@ invalid_op_flag             DS.B    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
 
+queue_press_enter   DC.B    'Press enter to continue...',0
+
 * Put variables and constants here
 
 print_blank         DC.B    0
@@ -1103,11 +1123,14 @@ print_blank         DC.B    0
 op_code_term        EQU     $FFFF
 op_codes_term       EQU     $0000
 
+******** OPCODES ARRAY ***********
+* An array of opcodes (starting with 'op_codes') that will be tested
+* in this order.
 
 op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
 op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
 op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls
-op_codes3       DC.W    op_code_asrm,op_code_aslm,op_code_lslm,op_code_lsrm,op_code_asr,op_code_asl,op_code_rolm,op_code_rorm,op_code_rol,op_code_ror,op_code_lsr,op_code_lsl **this order is strict
+op_codes3       DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol,op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl
 op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,op_code_bclr,op_code_bclr2,0
 
 ************** OP CODE DEFINITIONS ***************
@@ -1283,43 +1306,43 @@ op_string_bclr  DC.B    'BCLR',0
 
 op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrL,op_def_bclrB,op_code_term
 op_ea_bclrL     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
-op_ea_bclrB     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings                                        
-op_def_bclrL    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrL,3,0,opf_term      
-op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrB,3,0,opf_term      
+op_ea_bclrB     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings
+op_def_bclrL    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrL,3,0,opf_term
+op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrB,3,0,opf_term
 
 * Seperate code for BCLR with immediate data
-op_code_bclr2   DC.W    $0880,$FFC0,op_def_bclrL2,op_def_bclrB2,op_code_term   
+op_code_bclr2   DC.W    $0880,$FFC0,op_def_bclrL2,op_def_bclrB2,op_code_term
 op_def_bclrL2   DC.W    op_string_bclr,opf_size,long_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrL,3,0,opf_term
 op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrB,3,0,opf_term
 
 sub_op_bclr
-    MOVE.W  #'#',-(SP)          *Push the pound sign to the stack
-    BSR     sub_build_char      *Output the hex
-    LEA     2(SP),SP            *Reset the stack
+    MOVE.W  #'#',-(SP)              *Push the pound sign to the stack
+    BSR     sub_build_char          *Output the hex
+    LEA     2(SP),SP                *Reset the stack
 
-    MOVE.W  #word_size,-(SP)    *We need the word
-    BSR     sub_get_next_abs    *Get the next absolute to D1
-    LEA     2(SP),SP            *Reset the pointer
-    
-    MOVE.L  D1,D0               *Put the value in D0 for handy mask
-    MOVE.W  #0,-(SP)            *We want the byte at index 0
-    MOVE.W  #8,-(SP)            *And we want the whole byte
-    BSR     sub_handy_mask      *Get the value to D1
-    LEA     4(SP),SP            *Reset the stack pointer
-    
-    MOVE.L  D1,-(SP)            *Put the number on the stack
-    MOVE.W  #true,-(SP)         *We want it to print the boolean
-    MOVE.W  #byte_size,-(SP)    *It will always be a byte
+    MOVE.W  #word_size,-(SP)        *We need the word
+    BSR     sub_get_next_abs        *Get the next absolute to D1
+    LEA     2(SP),SP                *Reset the pointer
+
+    MOVE.L  D1,D0                   *Put the value in D0 for handy mask
+    MOVE.W  #0,-(SP)                *We want the byte at index 0
+    MOVE.W  #8,-(SP)                *And we want the whole byte
+    BSR     sub_handy_mask          *Get the value to D1
+    LEA     4(SP),SP                *Reset the stack pointer
+
+    MOVE.L  D1,-(SP)                *Put the number on the stack
+    MOVE.W  #true,-(SP)             *We want it to print the boolean
+    MOVE.W  #byte_size,-(SP)        *It will always be a byte
     BSR     sub_build_hex_string    *Build the string
-    LEA     8(SP),SP            *Reset the stack pointer 
-    
+    LEA     8(SP),SP                *Reset the stack pointer
+
     RTS
 
 
 op_string_movem DC.B    'MOVEM',0
 op_code_movem   DC.W    $4880,$FB80,op_def_movem,op_code_term
 op_ea_movem_rtm DC.B    ea_ari,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_ea_movem_mtr DC.B    ea_ari,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term 
+op_ea_movem_mtr DC.B    ea_ari,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_flip,10,opf_sub,sub_op_movem_rev,opf_ea,op_ea_movem_rtm,3,0
 op_def_movemf   DC.W    opf_flipped,opf_ea,op_ea_movem_mtr,3,0,opf_sub,sub_op_movem_reg,opf_term
 
@@ -1335,7 +1358,7 @@ sub_op_movem
     LEA         2(SP),SP                *Reset the stack pointer
     CLR.B       D2                      *Clear D2 to use as a counter
 sub_op_movem_loop
-    CMP.B       #16,D2                  *See if we are done going through the registers         
+    CMP.B       #16,D2                  *See if we are done going through the registers
     BGE         sub_op_movem_rts        *If we are done return control
     CMP.B       #false,D7               *Check the direction
     BNE         sub_op_movem_loop_lsl   *Go left
@@ -1378,16 +1401,15 @@ LF EQU $0A
 TAB EQU $9
 BS  EQU $8
 
-tab_stops       DC.B    8,17,24
-
-*make program jump back to other opcodes if invalid flag set?
 
 
-    * TEST PROGRAM * *BB88 eor bad*
 
     ORG     $3000
+tst DC.W    $1234
+txt DC.W    $1234
     BCLR    D0,(A0)
     BCLR    D0,D3
+    MOVE.W  #$123,D0
     BCLR    #255,D0
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
     MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
@@ -1403,7 +1425,6 @@ c   DC.W    $FF00
     ASL.L   #3,D3
     ASR.L   D1,D3
     ASL.L   D1,D3
-tst ROR.W   (A0)+
     ROL.W   (A0)+
     ROR.L   #3,D3
     ROL.L   #3,D3
@@ -1434,8 +1455,10 @@ tst ROR.W   (A0)+
     NEG.L    -(A1)
     MOVE.B  D1,(A0)
 
-
+END
     END    START        ; last line of source
+
+
 
 
 
