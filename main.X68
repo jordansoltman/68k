@@ -84,20 +84,27 @@ OUTPUT_DATA
     
 WAIT
 
-    LEA     queue_press_enter,A1                *Load the press enter message
+    LEA     string_press_enter,A1                *Load the press enter message
     MOVEQ   #14,D0                              *Setup for outputing a string
     TRAP    #15                                 *Output the string
     
     MOVE.L  #END,A1                             *Point A1 at the end of the program so that any input is dumped
     
     MOVEQ   #2,D0                               *Setup to input a string
-    TRAP    #15                                 *Input a string
+    TRAP    #15                                 *Input a string (we don't need the result)
+    
+    MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
+    MOVEQ   #11,D0                              *Move trap 11 to clear screen
+    TRAP    #15                                 *Clear the screen
     
     MOVEQ   #0,D3                               *Reset the line counter
     
     BRA     LOOP                                *Return to our master loop
 
 DONE
+    LEA     string_end,A1                       *Load the ending message
+    MOVEQ   #14,D0                              *Setup for outputing a string
+    TRAP    #15                                 *Output the string
     SIMHALT             ; halt simulator
 
 OUTPUT
@@ -196,7 +203,7 @@ sub_process_opcode_back_types
 
 sub_process_opcode_types
 
-    MOVE.W  (A0)+,D1
+    MOVE.W  (A0)+,D1                        *Get the next keyword
 
     CMP.W   #opf_count,D1                   *See if we are passing in a count
     BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
@@ -1004,6 +1011,7 @@ sub_handy_mask_done
 *********** CONSTANTS ***********
 
 tab_stops       DC.B    8,17,24
+clear_screen    EQU     $FF00
 
 true                EQU 1
 false               EQU 0
@@ -1114,7 +1122,8 @@ invalid_op_flag             DS.B    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
 
-queue_press_enter   DC.B    'Press enter to continue...',0
+string_press_enter   DC.B    'Press enter to continue...',0
+string_end           DC.B    'Reached end address. Program halted.',0
 
 * Put variables and constants here
 
@@ -1128,10 +1137,11 @@ op_codes_term       EQU     $0000
 * in this order.
 
 op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
-op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
-op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls
-op_codes3       DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol,op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl
-op_codes4       DC.W    op_code_bra,op_code_bcs,op_code_bvc,op_code_bge,op_code_blt,op_code_movem,op_code_bclr,op_code_bclr2,0
+op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_movem
+op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bge,op_code_blt
+op_codes3       DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
+op_codes4       DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bcs,op_code_bvc,op_code_bclr
+op_codes5       DC.W    op_code_bclr2,0
 
 ************** OP CODE DEFINITIONS ***************
 
