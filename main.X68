@@ -7,23 +7,23 @@
 
     ORG    $1000
 
-srt_addr  EQU     $3000
-end_addr  EQU     $3100
+srt_addr  EQU     $17000
+end_addr  EQU     $17100
 
 START
-    MOVE.L  #srt_addr,current_addr              *Load the starting address
+    MOVE.L  #srt_addr,current_addr             *Load the starting address
     MOVE.B  #0,D3                               *We will use D3 as a counter for line output
-    
+
 LOOP
     MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
-    MOVEA.L current_addr,A0                     *Load the current address to A0
+    MOVE.L  current_addr,A0
 
     CMP.L   #end_addr,A0                        *See if we are at the end address
     BGE     DONE                                *If so branch to done
-    
+
     CMP.B   #31,D3                              *See if we have maxed out the output
     BGE     WAIT                                *If so we'll wait for the enter key
-    
+
     ADDQ.B  #1,D3                               *Increment the counter by one
 
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
@@ -48,23 +48,25 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     CMP.W   D1,D2                               *See if it's a match
 
     BNE     LOOP_OPCODES                        *Try the next opcode
+    
+    MOVE.L  current_addr,current_addr_def_backup
 
 LOOP_OPDEFS
 
-    MOVE.W  (A2)+,A3                            
+    MOVE.W  (A2)+,A3
 
     CMP.W   #op_code_term,A3                    *See if we are at the end of the opcode
     BEQ     LOOP_OPCODES                        *If so we'll continue trying other opcodes
 
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
     CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
-    MOVE.W  current_addr_backup,current_addr    *Reset the address to the current address
+    MOVE.L  current_addr_def_backup,current_addr    *Reset the address to the current address
 
     MOVEM.L D0-D3/A0-A2,-(SP)                   *Save D0
     BSR     sub_build_current_line_address      *Print out the current line address
     MOVEM.L (SP)+,D0-D3/A0-A2                   *Restore D0
 
-    MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers  
+    MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers
     MOVE.L  A3,-(SP)                            *Move the address of the opcode definition to the stack
     BSR     sub_process_opcode                  *Process the opcode
     LEA     4(SP),SP                            *Reset the stack pointer
@@ -81,24 +83,24 @@ OUTPUT_DATA
     BSR     sub_build_data                      *Build ouput [ADDR]   DATA    $[DATA]
     MOVEM.L (SP)+,A0-A3/D0-D3                   *Restore the registers
     BRA     OUTPUT                              *Go output the string
-    
+
 WAIT
 
     LEA     string_press_enter,A1                *Load the press enter message
     MOVEQ   #14,D0                              *Setup for outputing a string
     TRAP    #15                                 *Output the string
-    
+
     MOVE.L  #END,A1                             *Point A1 at the end of the program so that any input is dumped
-    
+
     MOVEQ   #2,D0                               *Setup to input a string
     TRAP    #15                                 *Input a string (we don't need the result)
-    
+
     MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
     MOVEQ   #11,D0                              *Move trap 11 to clear screen
     TRAP    #15                                 *Clear the screen
-    
+
     MOVEQ   #0,D3                               *Reset the line counter
-    
+
     BRA     LOOP                                *Return to our master loop
 
 DONE
@@ -109,7 +111,7 @@ DONE
 
 OUTPUT
     LEA     output_string,A1                    *Get the output string and put it in A1
-    MOVEQ   #13,D0                              *Setup for output with no CR/LF 
+    MOVEQ   #13,D0                              *Setup for output with no CR/LF
     TRAP    #15                                 *Output
     BRA     LOOP                                *Return to the master loop
 
@@ -136,7 +138,7 @@ sub_process_opcode
     BSR     sub_build_string                *Build the string
     LEA     4(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
-    
+
     MOVE.W  (A0)+,D1                        *Get the size type or terminating opf
 
     CMP.W   #opf_term,D1                    *See if we have terminated
@@ -348,31 +350,31 @@ sub_process_opcode_types_ea
 sub_process_opcode_types_disp
 
     CMP.W   #opf_disp,D1                    *See if it's a displacement
-    BNE     sub_process_opcode_types_sub
+    BNE     sub_process_opcode_types_sub    *If it's not we'll check if it's a subroutine
 
-    MOVEM.L D0/A0,-(SP)
-    MOVE.W  #0,-(SP)
-    MOVE.W  #8,-(SP)
-    BSR     sub_handy_mask
-    LEA     4(SP),SP
-    MOVEM.L (SP)+,D0/A0
+    MOVEM.L D0/A0,-(SP)                     *Backup the registers
+    MOVE.W  #0,-(SP)                        *Displacement is assumed to start at bit 0
+    MOVE.W  #8,-(SP)                        *Get 8 bits
+    BSR     sub_handy_mask                  *Mask the values
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
 
-    MOVEM.L D0/A0,-(SP)
-    MOVE.W  D1,-(SP)
-    BSR     sub_build_displacement
-    LEA     2(SP),SP
-    MOVEM.L (SP)+,D0/A0
+    MOVEM.L D0/A0,-(SP)                     *Backup the registers
+    MOVE.W  D1,-(SP)                        *Move the displacement to the stack
+    BSR     sub_build_displacement          *Build the displacement string
+    LEA     2(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
 
-    BRA     sub_process_opcode_types_next
+    BRA     sub_process_opcode_types_next   *Check for the next room
 
 
 sub_process_opcode_types_sub
 
-    MOVE.W  (A0)+,A1
+    MOVE.W  (A0)+,A1                        *Get the address of the subroutine
 
-    MOVEM.L D1/D0/A0,-(SP)
-    JSR     (A1)
-    MOVEM.L (SP)+,D1/D0/A0
+    MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
+    JSR     (A1)                            *Call the custom subroutine
+    MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
 
 sub_process_opcode_types_next
 
@@ -384,9 +386,9 @@ sub_process_opcode_types_next
     CMP.W   #opf_flipped,D1                 *See if it's the flipped
     BEQ     sub_process_opcode_rts          *If so we are done
 
-    MOVEM.L A0/D0/D7,-(SP)
-    BSR     sub_build_string_comma_space
-    MOVEM.L (SP)+,A0/D0/D7
+    MOVEM.L A0/D0/D7,-(SP)                  *Backup the registers
+    BSR     sub_build_string_comma_space    *Build a comma and then a space because there must be another field
+    MOVEM.L (SP)+,A0/D0/D7                  *Restore the registers
 
     BRA     sub_process_opcode_back_types   *Go back and get start again
 
@@ -423,7 +425,7 @@ sub_build_data
     BSR         sub_build_hex_string        *Build the string
     LEA         8(SP),SP                    *Reset the pointer
 
-    BSR         sub_build_finish
+    BSR         sub_build_finish            *Finish out the output with a terminating 0
 
     RTS
 
@@ -445,16 +447,23 @@ sub_build_finish
 *
 * sub_build_current_line_address
 *
-* Puts a null character at the end
+* Outputs the current line
 *
 sub_build_current_line_address
-    MOVE.L      current_addr_backup,-(SP)
-    MOVE.W      #false,-(SP)
-    MOVE.W      #word_size,-(SP)
-    BSR         sub_build_hex_string
-    LEA         8(SP),SP
+    MOVE.L      current_addr_backup,D1          *Get the address
+    MOVE.L      D1,-(SP)                        *Put the address on the stack      
+    MOVE.W      #false,-(SP)                    *We don't want to output a hex symbol for the address
+    CMP.L       #$FFFF,D1                       *Compare against the max address of a word
+    BGT         sub_build_current_line_long     *Use a long size
+    MOVE.W      #word_size,-(SP)                *Otherwise we can represent with a word
+    BRA         sub_build_current_line_build
+sub_build_current_line_long
+    MOVE.W      #long_size,-(SP)                *Make it a long
+sub_build_current_line_build
+    BSR         sub_build_hex_string            *Build the string
+    LEA         8(SP),SP                        *Reset the stack pointer
 
-    BSR         sub_tab
+    BSR         sub_tab                         *Tab forward
 
     RTS
 
@@ -1010,7 +1019,7 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
-tab_stops       DC.B    8,17,24
+tab_stops       DC.B    8,10,20,24
 clear_screen    EQU     $FF00
 
 true                EQU 1
@@ -1114,10 +1123,11 @@ opf_term        EQU      12
 
 ******* STORAGE **********
 
-output_string               DS.B    50
+output_string               DS.B    120
 output_string_displacement  DS.W    1
 current_addr                DS.L    1
 current_addr_backup         DS.L    1
+current_addr_def_backup     DS.L    1
 invalid_op_flag             DS.B    1
 
 hex_characters  DC.B    '0123456789ABCDEF'
@@ -1136,8 +1146,8 @@ op_codes_term       EQU     $0000
 * An array of opcodes (starting with 'op_codes') that will be tested
 * in this order.
 
-op_codes        DC.W    op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
-op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_movem
+op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
+op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
 op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bge,op_code_blt
 op_codes3       DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
 op_codes4       DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bcs,op_code_bvc,op_code_bclr
@@ -1415,20 +1425,14 @@ BS  EQU $8
 
 
     ORG     $3000
-tst DC.W    $1234
-txt DC.W    $1234
+    MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
+    ADDA.W  $1234,A0
     BCLR    D0,(A0)
     BCLR    D0,D3
     MOVE.W  #$123,D0
     BCLR    #255,D0
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
     MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
-    BRA     $2FFE
-    BLT     $3005
-c   DC.W    $FF00
-    BGE     $3008
-    BVC     $3922
-    BCS     $2323
     ASR.W   (A0)+
     ASL.W   (A0)+
     ASR.L   #3,D3
@@ -1467,6 +1471,7 @@ c   DC.W    $FF00
 
 END
     END    START        ; last line of source
+
 
 
 
