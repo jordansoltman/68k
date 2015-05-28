@@ -7,8 +7,8 @@
 
     ORG    $1000
 
-srt_addr  EQU     $17000
-end_addr  EQU     $17100
+srt_addr  EQU     $3000
+end_addr  EQU     $3050
 
 START
     MOVE.L  #srt_addr,current_addr             *Load the starting address
@@ -139,7 +139,25 @@ sub_process_opcode
     LEA     4(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
 
-    MOVE.W  (A0)+,D1                        *Get the size type or terminating opf
+    MOVE.W  (A0)+,D1                        *Get the size type or terminating opf or cond info
+    
+    **** Condition operand
+    CMP.W   #opf_cond,D1                    *See if we have a condition
+    BNE     sub_process_opcode_check_size   *If not continue on
+    
+    MOVE.W  (A0)+,D1                        *Get the condition bit location
+    
+    MOVEM.L D0/A0,-(SP)                     *Backup the registers
+    MOVE.W  D1,-(SP)                        *Put the bit position in D1
+    MOVE.W  #4,-(SP)                        *set our size to 4 for the condition code
+    BSR     sub_handy_mask                  *Grab the condition to D1
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0/A0                     *Restore the registers
+    
+    MOVEA.L #conditions,A1                  *Load the conditions
+    
+
+sub_process_opcode_check_size    
 
     CMP.W   #opf_term,D1                    *See if we have terminated
     BEQ     sub_process_opcode_rts          *We are done with this code so we'll return
@@ -310,12 +328,12 @@ sub_process_opcode_types_imm
 
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
     MOVE.W  D7,-(SP)                        *Push the size onto the stack
-    BSR     sub_get_next_abs                *Print out the value
+    BSR     sub_get_next_abs                *Get the value (will be returned in D1)
     LEA     2(SP),SP                        *Reset the stack
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     MOVEM.L A0/D0/D7,-(SP)                  * save current address on the stack
-    MOVE.L  D3,-(SP)                        * move value (word or long) to stack
+    MOVE.L  D1,-(SP)                        * move value (word or long) to stack
     MOVE.W  #true,-(SP)                     * Always true becuase we always want to print the $ symbol
     MOVE.W  D7,-(SP)                        * move size to the stack
     BSR     sub_build_hex_string            * call sub_build_hex_string
@@ -370,10 +388,25 @@ sub_process_opcode_types_disp
 
 sub_process_opcode_types_sub
 
+    CMP.W   #opf_sub,D1                     *See if it's a subroutine
+    BNE     sub_process_opcode_types_string *If not go to string
+
     MOVE.W  (A0)+,A1                        *Get the address of the subroutine
 
     MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
     JSR     (A1)                            *Call the custom subroutine
+    MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
+    
+    BRA     sub_process_opcode_types_next   *Go to next
+    
+sub_process_opcode_types_string
+
+    MOVE.W  (A0)+,A1                        *Get the address of the string
+    
+    MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
+    MOVE.L  A1,-(SP)                        *Put the string address on the stack
+    BSR     sub_build_string                *Build the string
+    LEA     4(SP),SP                        *Reset the stack pointer
     MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
 
 sub_process_opcode_types_next
@@ -1019,7 +1052,7 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
-tab_stops       DC.B    8,10,20,24
+tab_stops       DC.B    12,24,30
 clear_screen    EQU     $FF00
 
 true                EQU 1
@@ -1083,42 +1116,51 @@ opf_count       EQU     1
 * 2) type (either ea_reg_dir or ea_add_dir)
 opf_reg         EQU     2
 
+opf_reg_add     EQU     3
+
 *** opf_count_reg ***
 * 1) determinent bit position (where it is determined if it's a count or register)
 * 2) start bit position
 * 3) type (either ea_reg_dir or ea_add_dir)
-opf_count_reg   EQU     3
+opf_count_reg   EQU     4
 
-opf_imm         EQU     4
+opf_imm         EQU     5
 
-opf_disp        EQU     5
+opf_disp        EQU     6
 
 *** opf_sub ***
 * Passes control to a subroutine
 * 1) address of subroutine
-opf_sub         EQU      6
+opf_sub         EQU      7
+
+opf_string      EQU      8
+
+opf_cond        EQU      9
+
+opf_vector      EQU     10
+
 
 *** opf_flip ***
 * Determines if A and B can be flipped
 * 1) bit position
-opf_flip        EQU     7
+opf_flip        EQU     11
 
-opf_flipped     EQU     8
+opf_flipped     EQU     12
 
 *** opf_sizes ***
 * 1) determinent bit position (starting location where size can be determined)
 * 2) byte representation or no_size
 * 3) word representation or no_size
 * 4) long representation or no_size
-opf_sizes       EQU     9
+opf_sizes       EQU     13
 
 *** opf_size_only ***
 * 1) size (in byte_size, word_size, long_size)
-opf_size        EQU     10
+opf_size        EQU     14
 
-opf_no_size     EQU     11
+opf_no_size     EQU     15
 
-opf_term        EQU      12
+opf_term        EQU      16
 
 
 ******* STORAGE **********
@@ -1130,6 +1172,8 @@ current_addr_backup         DS.L    1
 current_addr_def_backup     DS.L    1
 invalid_op_flag             DS.B    1
 
+******* STRINGS *********
+
 hex_characters  DC.B    '0123456789ABCDEF'
 
 string_press_enter   DC.B    'Press enter to continue...',0
@@ -1139,19 +1183,28 @@ string_end           DC.B    'Reached end address. Program halted.',0
 
 print_blank         DC.B    0
 
+cond_term           EQU     $FFFF
 op_code_term        EQU     $FFFF
 op_codes_term       EQU     $0000
+
+******** CONDITIONS ARRAY *********
+
+conditions      DC.W    %0000,'RA',%0010,'HI',%0011,'LS',%0100,'CC',%0101,'CS',%0110,'NE',%0111,'EQ',%1000,'VC',%1001,'VS'
+                DC.W    %1010,'PL',%1011,'MI',%1100,'GE',%1101,'LT',%1110,'GT',%1111,'LE',cond_term
 
 ******** OPCODES ARRAY ***********
 * An array of opcodes (starting with 'op_codes') that will be tested
 * in this order.
 
 op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
-op_codes1       DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts
-op_codes2       DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bge,op_code_blt
-op_codes3       DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
-op_codes4       DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bcs,op_code_bvc,op_code_bclr
-op_codes5       DC.W    op_code_bclr2,0
+                DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
+                DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bge,op_code_blt
+                DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
+                DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bcs,op_code_bvc,op_code_bclr
+op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_code_subi,op_code_suba,op_code_rtr,op_code_pea
+                DC.W    op_code_not,op_code_negx,op_code_nbcd,op_code_mulu,op_code_movesr,op_code_moveccr,op_code_jmp
+                DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
+                DC.W    0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1221,7 +1274,7 @@ op_ea_jsr_dest  DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_jsr      DC.W    op_string_jsr,opf_no_size,opf_ea,op_ea_jsr_dest,3,0,opf_term
 
 op_string_subq  DC.B    'SUBQ',0
-op_code_subq    DC.W    $5000,$F000,op_def_subq,op_code_term
+op_code_subq    DC.W    $5100,$F100,op_def_subq,op_code_term
 op_ea_subq_dest DC.B    ea_reg_dir,ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_subq     DC.W    op_string_subq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_subq_dest,3,0,opf_term
 
@@ -1243,7 +1296,7 @@ op_ea_cmp_src   DC.B    ea_all
 op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_cmp_src,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_muls  DC.B    'MULS',0
-op_code_muls    DC.W    $C000,$F000,op_def_muls,op_code_term
+op_code_muls    DC.W    $C1C0,$F1C0,op_def_muls,op_code_term
 op_ea_muls_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_muls     DC.W    op_string_muls,opf_size,word_size,opf_ea,op_ea_muls_src,3,0,opf_reg,9,ea_reg_dir,opf_term
 
@@ -1415,6 +1468,123 @@ sub_op_movem_rts
     BSR         sub_build_char          *Go back
     LEA         2(SP),SP                *Restore the pointers
     RTS
+    
+*** EXTRA DEFINITIONS ****
+
+op_string_unlk  DC.B    'UNLK',0
+op_code_unlk    DC.W    $4E58,$FFF8,op_def_unlk,op_code_term
+op_def_unlk     DC.W    op_string_unlk,opf_no_size,opf_reg,0,ea_add_dir,opf_term
+
+op_string_tst   DC.B    'TST',0
+op_code_tst     DC.W    $4A00,$FF00,op_def_tst,op_code_term
+op_ea_tst_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_tst      DC.W    op_string_tst,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_tst_dest,3,0,opf_term
+
+op_string_tas   DC.B    'TAS',0
+op_code_tas     DC.W    $4AC0,$FFC0,op_def_tas,op_code_term
+op_ea_tas       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_tas      DC.W    op_string_tas,opf_size,byte_size,opf_ea,op_ea_tas,3,0,opf_term
+
+op_string_swap  DC.B    'SWAP',0
+op_code_swap    DC.W    $4840,$FFF8,op_def_swap,op_code_term
+op_def_swap     DC.W    op_string_swap,opf_size,word_size,opf_reg,0,ea_reg_dir,opf_term
+
+op_string_subi  DC.B    'SUBI',0
+op_code_subi    DC.W    $0400,$FF00,op_def_subi,op_code_term
+op_ea_subi      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_subi     DC.W    op_string_subi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_subi,3,0,opf_term
+
+op_string_suba  DC.B    'SUBA',0
+op_code_suba    DC.W    $90C0,$F0C0,op_def_suba,op_code_term
+op_ea_suba_src  DC.B    ea_all
+op_def_suba     DC.W    op_string_suba,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_suba_src,3,0,opf_reg,9,ea_add_dir,opf_term
+
+op_string_rtr   DC.B    'RTR',0
+op_code_rtr     DC.W    $4E77,$FFFF,op_def_rtr,op_code_term
+op_def_rtr      DC.W    op_string_rtr,opf_no_size,opf_term
+
+op_string_pea   DC.B    'PEA',0
+op_code_pea     DC.W    $4840,$FFC0,op_def_pea,op_code_term
+op_ea_pea       DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_pea      DC.W    op_string_pea,opf_size,long_size,opf_ea,op_ea_pea,3,0,opf_term
+
+op_string_not   DC.B    'NOT',0
+op_code_not     DC.W    $4600,$FF00,op_def_not,op_code_term
+op_ea_not       DC.B    ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_not      DC.W    op_string_not,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_not,3,0,opf_term
+
+op_string_negx  DC.B    'NEGX',0
+op_code_negx    DC.W    $4000,$FF00,op_def_negx,op_code_term
+op_ea_negx      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_negx     DC.W    op_string_negx,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_negx,3,0,opf_term
+
+op_string_nbcd  DC.B    'NBCD',0
+op_code_nbcd    DC.W    $4800,$FFC0,op_def_nbcd,op_code_term
+op_ea_nbcd      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_nbcd     DC.W    op_string_nbcd,opf_size,byte_size,opf_ea,op_ea_nbcd,3,0,opf_term
+
+op_string_mulu  DC.B    'MULU',0
+op_code_mulu    DC.W    $C0C0,$F1C0,op_def_mulu,op_code_term
+op_ea_mulu      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_mulu     DC.W    op_string_mulu,opf_size,word_size,opf_ea,op_ea_mulu,3,0,opf_reg,9,ea_reg_dir,opf_term
+
+op_string_movesr    DC.B    'MOVE',0
+op_string_sr        DC.B    'SR',0
+op_code_movesr      DC.W    $40C0,$FFC0,op_def_movesr,op_code_term
+op_ea_movesr        DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_movesr       DC.W    op_string_movesr,opf_size,word_size,opf_string,op_string_sr,opf_ea,op_ea_movesr,3,0,opf_term
+
+op_string_moveccr   DC.B    'MOVE',0
+op_string_ccr       DC.B    'CCR',0
+op_code_moveccr     DC.W    $44C0,$FFC0,op_def_moveccr,op_code_term
+op_ea_moveccr       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term 
+op_def_moveccr      DC.W    op_string_moveccr,opf_size,word_size,opf_ea,op_ea_moveccr,3,0,opf_string,op_string_ccr,opf_term
+
+op_string_jmp       DC.B    'JMP',0
+op_code_jmp         DC.W    $4EC0,$FFC0,op_def_jmp,op_code_term
+op_ea_jmp           DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_jmp          DC.W    op_string_jmp,opf_no_size,opf_ea,op_ea_jmp,3,0,opf_term
+
+op_string_illegal   DC.B    'ILLEGAL',0
+op_code_illegal     DC.W    $4AFC,$FFFF,op_def_illegal,op_code_term
+op_def_illegal      DC.W    op_string_illegal,opf_term
+
+op_string_eori      DC.B    'EORI',0
+op_code_eori        DC.W    $0A00,$FF00,op_def_eori,op_code_term
+op_ea_eori          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_eori         DC.W    op_string_eori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_eori,3,0,opf_term
+
+op_string_divu      DC.B    'DIVU',0
+op_code_divu        DC.W    $80C0,$F1C0,op_def_divu,op_code_term
+op_ea_divu          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_divu         DC.W    op_string_divu,opf_size,word_size,opf_ea,op_ea_divu,3,0,opf_reg,9,ea_reg_dir,opf_term
+
+op_string_cmpm      DC.B    'CMPM',0
+op_code_cmpm        DC.W    $B108,$F138,op_def_cmpm,op_code_term
+op_def_cmpm         DC.W    op_string_cmpm,opf_sizes,6,%00,%01,%10,opf_reg,0,ea_ari_post,opf_reg,9,ea_ari_post,opf_term
+
+op_string_cmpa      DC.B    'CMPA',0
+op_code_cmpa        DC.W    $B0C0,$F0C0,op_def_cmpa,op_code_term
+op_ea_cmpa          DC.B    ea_all
+op_def_cmpa         DC.W    op_string_cmpa,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_cmpa,3,0,opf_reg,9,ea_add_dir,opf_term
+
+op_string_clr       DC.B    'CLR',0
+op_code_clr         DC.W    $4200,$FF00,op_def_clr,op_code_term
+op_ea_clr           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_clr          DC.W    op_string_clr,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_clr,3,0,opf_term
+
+op_string_chk       DC.B    'CHK',0
+op_code_chk         DC.W    $4100,$F140,op_def_chk,op_code_term
+op_ea_chk           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_chk          DC.W    op_string_chk,opf_size,word_size,opf_ea,op_ea_chk,3,0,opf_reg,8,ea_reg_dir,opf_term
+
+op_string_bsr       DC.B    'BSR',0
+op_code_bsr         DC.W    $6100,$FF00,op_def_bsr,op_code_term
+op_def_bsr          DC.W    op_string_bsr,opf_no_size,opf_disp,opf_term
+
+
+
+
 
 CR EQU $0D
 LF EQU $0A
@@ -1426,6 +1596,34 @@ BS  EQU $8
 
     ORG     $3000
     MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
+    UNLK    A3
+    CMPM.B (A0)+,(A2)+
+    NEGX.L  D3
+    CLR.B   D0
+    CLR.W   D1
+    BSR     op_def_bsr
+    CHK     D3,D4
+    CLR.L   D2
+    CMPA.L  #$124333,A4
+    NBCD    D3
+    JMP     (A3)
+    DIVU    D3,D2
+    EORI.W  #4344,D3
+    MOVE    D3,CCR
+    ILLEGAL
+    MOVE    SR,D7
+    NEG.L   $3333
+    MULU   $10,D3
+    SUBI.L  #$30051555,D5
+    SUBA.L  #$12345667,A3
+    NOT     (A2)
+    PEA     $12355
+    TST.B   (A3)
+    RTR
+    TAS     D5
+    SUBQ    #3,D3
+    SWAP    D2
+    
     ADDA.W  $1234,A0
     BCLR    D0,(A0)
     BCLR    D0,D3
