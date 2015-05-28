@@ -15,7 +15,7 @@ START
     MOVE.B  #0,D3                               *We will use D3 as a counter for line output
 
 LOOP
-    MOVE.L  current_addr,current_addr_backup    *Creates a backup of the address
+    MOVE.L  current_addr,current_addr_backup    *Create a backup of the address
     MOVE.L  current_addr,A0
 
     CMP.L   #end_addr,A0                        *See if we are at the end address
@@ -49,8 +49,6 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
 
     BNE     LOOP_OPCODES                        *Try the next opcode
     
-    MOVE.L  current_addr,current_addr_def_backup
-
 LOOP_OPDEFS
 
     MOVE.W  (A2)+,A3
@@ -60,7 +58,7 @@ LOOP_OPDEFS
 
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
     CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
-    MOVE.L  current_addr_def_backup,current_addr    *Reset the address to the current address
+    MOVE.L  A0,current_addr    *Reset the address to the current address
 
     MOVEM.L D0-D3/A0-A2,-(SP)                   *Save D0
     BSR     sub_build_current_line_address      *Print out the current line address
@@ -1255,7 +1253,7 @@ op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_co
 op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_code_subi,op_code_suba,op_code_rtr,op_code_pea
                 DC.W    op_code_not,op_code_negx,op_code_nbcd,op_code_mulu,op_code_movesr,op_code_moveccr,op_code_jmp
                 DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
-                DC.W    op_code_scc,0
+                DC.W    op_code_scc,op_code_andi,op_code_andi_ccr,op_code_and,op_code_addq,op_code_addi,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1627,7 +1625,31 @@ op_code_scc         DC.W    $50C0,$F0C0,op_def_scc,op_code_term
 op_ea_scc           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_scc          DC.W    op_string_scc,opf_cond,8,true,opf_no_size,opf_ea,op_ea_scc,3,0,opf_term
 
+op_string_andi      DC.B    'ANDI',0
+op_code_andi        DC.W    $0200,$FF00,op_def_andi,op_code_term
+op_ea_andi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_andi         DC.W    op_string_andi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_andi,3,0,opf_term
 
+op_string_andi_ccr  DC.B    'CCR',0
+op_code_andi_ccr    DC.W    $023C,$FFFF,op_def_andi_ccr,op_code_term
+op_def_andi_ccr     DC.W    op_string_andi,opf_size,byte_size,opf_imm,opf_string,op_string_andi_ccr,opf_term
+
+op_string_and       DC.B    'AND',0
+op_code_and         DC.W    $C000,$F000,op_def_and,op_code_term
+op_ea_and_src       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_ea_and_dest      DC.B    ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_and          DC.W    op_string_and,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_and_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+op_def_and_flipped  DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_and_dest,3,0,opf_term
+
+op_string_addq      DC.B    'ADDQ',0
+op_code_addq        DC.W    $5000,$F100,op_def_addq,op_code_term
+op_ea_addq          DC.B    ea_add_dir,ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_addq         DC.W    op_string_addq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_addq,3,0,opf_term
+
+op_string_addi      DC.B    'ADDI',0
+op_code_addi        DC.W    $0600,$FF00,op_def_addi,op_code_term
+op_ea_addi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_addi         DC.W    op_string_addi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_addi,3,0,opf_term
 
 CR EQU $0D
 LF EQU $0A
@@ -1638,105 +1660,10 @@ BS  EQU $8
 
 
     ORG     $3000
-    BRA     op_string_scc
-    BCC     op_string_scc
-    BCS     op_string_scc
-    BEQ     op_string_scc
-    BGE     op_string_scc
-    BGT     op_string_scc
-    BHI     op_string_scc
-    BLE     op_string_scc
-    BLS     op_string_scc
-    BLT     op_string_scc
-    BMI     op_string_scc
-    BNE     op_string_scc
-    BPL     op_string_scc
-    BVC     op_string_scc
-    BVS     op_string_scc
-    SGE     D4
-    SGT     D5
-    SHI     D6
-    SLE     D7
-    SLS     D0
-    SLT     D1
-    SMI     D2
-    SNE     D3
-    SPL     D4
-    ST      D5
-    SVC     D6
-    SVS     D7
-    MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
-    UNLK    A3
-    CMPM.B (A0)+,(A2)+
-    NEGX.L  D3
-    CLR.B   D0
-    CLR.W   D1
-    BSR     op_def_bsr
-    CHK     D3,D4
-    CLR.L   D2
-    CMPA.L  #$124333,A4
-    NBCD    D3
-    JMP     (A3)
-    DIVU    D3,D2
-    EORI.W  #4344,D3
-    MOVE    D3,CCR
-    ILLEGAL
-    MOVE    SR,D7
-    NEG.L   $3333
-    MULU   $10,D3
-    SUBI.L  #$30051555,D5
-    SUBA.L  #$12345667,A3
-    NOT     (A2)
-    PEA     $12355
-    TST.B   (A3)
-    RTR
-    TAS     D5
-    SUBQ    #3,D3
-    SWAP    D2
-    
-    ADDA.W  $1234,A0
-    BCLR    D0,(A0)
-    BCLR    D0,D3
-    MOVE.W  #$123,D0
-    BCLR    #255,D0
-    MOVEM.W D0/D1/D3/D7/A0/A4/A7,-(SP)
-    MOVEM.W (SP)+,D0/D1/D3/D7/A0/A4/A7
-    ASR.W   (A0)+
-    ASL.W   (A0)+
-    ASR.L   #3,D3
-    ASL.L   #3,D3
-    ASR.L   D1,D3
-    ASL.L   D1,D3
-    ROL.W   (A0)+
-    ROR.L   #3,D3
-    ROL.L   #3,D3
-    ROR.L   D1,D3
-    ROL.L   D1,D3
-
-    LSR.W   (A0)+
-    LSL.W   (A0)+
-    LSR.L   #3,D3
-    LSL.L   #3,D3
-    LSR.L   D1,D3
-    LSL.L   D1,D3
-
-    ADD.L   $12345678,D3
-    SUBQ.W  #4,A0
-    ORI.W   #$1234,D4
-    SUB.W   $1233,D3
-    MULS    $1233,D1
-    DIVS    #$12,D1
-    CMP.W   A0,D1
-    RTS
-    JSR     (A0)
-    JSR     $1234
-    EOR.B   D1,(A0)+
-    CMPI.L  #$12345678,D2
-
-    NEG.W    D3
-    NEG.L    -(A1)
-    MOVE.B  D1,(A0)
-
+    ANDI    #5,CCR
+    AND     #4,D5
+    ADD     #5,D3
+    MOVE    $12345678,D3
 END
     END    START        ; last line of source
 
