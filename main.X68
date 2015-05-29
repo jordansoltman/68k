@@ -8,7 +8,7 @@
     ORG    $1000
 
 srt_addr  EQU     $3000
-end_addr  EQU     $3050
+end_addr  EQU     $FFFF
 
 START
     MOVE.L  #srt_addr,current_addr             *Load the starting address
@@ -1082,7 +1082,7 @@ sub_handy_mask_done
 
 *********** CONSTANTS ***********
 
-tab_stops       DC.B    12,24,30
+tab_stops       DC.B    12,24,36
 clear_screen    EQU     $FF00
 
 true                EQU 1
@@ -1253,7 +1253,7 @@ op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_co
 op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_code_subi,op_code_suba,op_code_rtr,op_code_pea
                 DC.W    op_code_not,op_code_negx,op_code_nbcd,op_code_mulu,op_code_movesr,op_code_moveccr,op_code_jmp
                 DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
-                DC.W    op_code_scc,op_code_andi,op_code_andi_ccr,op_code_and,op_code_addq,op_code_addi,0
+                DC.W    op_code_scc,op_code_andi,op_code_andi_ccr,op_code_and,op_code_addq,op_code_addi,op_code_moveq,0
 
 ************** OP CODE DEFINITIONS ***************
 
@@ -1651,6 +1651,30 @@ op_code_addi        DC.W    $0600,$FF00,op_def_addi,op_code_term
 op_ea_addi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_addi         DC.W    op_string_addi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_addi,3,0,opf_term
 
+op_string_moveq     DC.B    'MOVEQ',0
+op_code_moveq       DC.W    $7000,$F100,op_def_moveq,op_code_term
+op_def_moveq        DC.W    op_string_moveq,opf_size,long_size,opf_sub,sub_op_moveq,opf_reg,9,ea_reg_dir,opf_term
+
+sub_op_moveq
+    MOVE.W      #0,-(SP)            *We want the byte at bit 0
+    MOVE.W      #8,-(SP)            *We want a byte
+    BSR         sub_handy_mask      *Mask the value to d1
+    LEA         4(SP),SP            *Reset the stack pointer
+    
+    MOVEM.L     D1,-(SP)            *Backup the registers
+    MOVE.W      #'#',-(SP)          *Put a pound sign on for immediate
+    BSR         sub_build_char      *Build it
+    LEA         2(SP),SP            *Reset the stack
+    MOVEM.L     (SP)+,D1            *Restore the registers
+    
+    MOVE.L      D1,-(SP)            *Put the value on the stack
+    MOVE.W      #true,-(SP)         *We want a hex sign
+    MOVE.W      #byte_size,-(SP)    *We want to print a byte
+    BSR         sub_build_hex_string    *Build it
+    LEA         8(SP),SP            *Reset the stack pointer
+    
+    RTS
+
 CR EQU $0D
 LF EQU $0A
 TAB EQU $9
@@ -1660,9 +1684,25 @@ BS  EQU $8
 
 
     ORG     $3000
+    MOVEQ   #$44,D5
+    MOVEM.L D0-D7,-(SP)
+    ADD     #5,D3
+    ADDI    #$7B,D3
+    MOVE    $12345678,D3
     ANDI    #5,CCR
     AND     #4,D5
     ADD     #5,D3
+    ADDI    #$7B,D3
+    MOVE    $12345678,D3
+    ANDI    #5,CCR
+    AND     #4,D5
+    ADD     #5,D3
+    ADDI    #$7B,D3
+    MOVE    $12345678,D3
+    ANDI    #5,CCR
+    AND     #4,D5
+    ADD     #5,D3
+    ADDI    #$7B,D3
     MOVE    $12345678,D3
 END
     END    START        ; last line of source
