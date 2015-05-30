@@ -7,18 +7,27 @@
 
     ORG    $1000
 
-srt_addr  EQU     $3000
-end_addr  EQU     $FFFF
-
 START
-    MOVE.L  #srt_addr,current_addr             *Load the starting address
+    
+    MOVE.L  #string_enter_start,-(SP)           *Load the start address prompt to the stack
+    BSR     sub_get_input_hex                   *Get the starting address to D0
+    LEA     4(SP),SP                            *Reset the stack pointer
+    
+    MOVE.L  D0,current_addr                     *Store the start as the current address
+    
+    MOVE.L  #string_enter_stop,-(SP)            *Load the ending address to the stack
+    BSR     sub_get_input_hex                   *Get the end address to D0
+    LEA     4(SP),SP                            *Reset the stack pointer
+            
+    MOVE.L  D0,end_addr                         *Store the ending address
+    
     MOVE.B  #0,D3                               *We will use D3 as a counter for line output
 
 LOOP
     MOVE.L  current_addr,current_addr_backup    *Create a backup of the address
     MOVE.L  current_addr,A0
 
-    CMP.L   #end_addr,A0                        *See if we are at the end address
+    CMP.L   end_addr,A0                        *See if we are at the end address
     BGE     DONE                                *If so branch to done
 
     CMP.B   #31,D3                              *See if we have maxed out the output
@@ -88,7 +97,7 @@ WAIT
     MOVEQ   #14,D0                              *Setup for outputing a string
     TRAP    #15                                 *Output the string
 
-    MOVE.L  #END,A1                             *Point A1 at the end of the program so that any input is dumped
+    LEA  input,A1                             *Point A1 at the end of the program so that any input is dumped
 
     MOVEQ   #2,D0                               *Setup to input a string
     TRAP    #15                                 *Input a string (we don't need the result)
@@ -492,6 +501,98 @@ sub_build_data
 
     RTS
 
+**************************************************************
+*
+* sub_get_input_hex
+*
+* Stack Parameters:
+* 1 (L): The address null terminated byte string to be output as a prompt
+*
+* Return Registers
+* 1 (L): The address is returned as a long through D0
+*
+    OFFSET  4
+sub_get_input_hex_prompt  DS.L  1
+    ORG *
+    
+sub_get_input_hex
+
+    MOVE.L  #14,D0                              *Setup for string output
+    MOVEA.L sub_get_input_hex_prompt(SP),A1     *Load the prompt
+    TRAP    #15                                 *Output the prompt
+
+    MOVE.L  #2,D0                               *Setup for keyboard input
+    LEA     input,A1                            *Load the ending address to store the input string
+    TRAP    #15                                 *Get the input string and the size to D1.W   
+    
+    CMP.W   #0,D1                               *See if no string was entered
+    BEQ     sub_get_input_hex_invalid_hex       *If so it's invalid
+    
+    CLR.L   D3                                  *D3 will be for output
+    
+sub_get_input_hex_lead_zeros
+
+    MOVE.B  (A1),D2                             *Get the first byte
+    CMP.B   #$30,D2                             *See if it's 0
+    BNE     sub_get_input_hex_check_size        *If not we'll go on to check the hex string size
+    
+    CMP.W   #0,D1                               *See if we have run out of characters
+    BEQ     sub_get_input_hex_rts               *If so the hex must be 0x0
+    
+    SUBQ.W  #1,D1                               *If so, subtract one from the total size
+    LEA     1(A1),A1                            *Move our address up by one
+    
+    BRA     sub_get_input_hex_lead_zeros        *Loop back to check the next 0
+    
+sub_get_input_hex_check_size
+
+    CMP.W   #8,D1                               *See if our size is greater than 8
+    BGT     sub_get_input_hex_invalid_size      *If we have more than 8 characters it's too big
+    
+sub_get_input_hex_parse
+    
+    CMP.W   #0,D1                               *See if we are out of characers
+    BEQ     sub_get_input_hex_rts               *If so we'll return
+    SUBQ    #1,D1                               *Otherwise subtract one from the size as a counter
+    
+    MOVE.B  (A1)+,D2                            *Get the next character
+    
+    CMP.B   #$61,D2                             *See if it's greater than $61 (lowercase letters)
+    BLT     sub_get_input_hex_parse_uc          *If not check undercase letters
+    SUB.B   #$57,D2                             *Subtract $57 so it'll be in the range A to infinity
+    BRA     sub_get_input_hex_parse_output      *Continue to the output
+    
+sub_get_input_hex_parse_uc
+    CMP.B   #$41,D2                             *See if it's greater than $41 (uppercase letters)
+    BLT     sub_get_input_hex_parse_num         *If it's less than we'll check numbers 0-9
+    SUB.B   #$37,D2                             *Subtract $47 so it'll be in the range a...A
+    BRA     sub_get_input_hex_parse_output      *Contine to the output
+    
+sub_get_input_hex_parse_num
+    CMP.B   #$30,D2                             *Compare against the numeric range
+    BLT     sub_get_input_hex_invalid_hex       *If it's less, it must be an invalid character
+    SUB.B   #$30,D2                             *Otherwise subract 30 to get in the range 0-a
+    
+sub_get_input_hex_parse_output   
+    
+    CMP.B   #15,D2                              *See if it's greater than 15 (f)
+    BGT     sub_get_input_hex_invalid_hex       *If so it's invalid
+    LSL.L   #4,D3                               *Make room for the characer
+    ADD.B   D2,D3                               *Put it onto the address
+    BRA     sub_get_input_hex_parse             *Go back for the next character
+        
+sub_get_input_hex_invalid_size
+    LEA     string_invalid_size,A1              *Load the invalid size string
+    BRA     sub_get_input_hex_output_invalid    *Branch to output the string
+sub_get_input_hex_invalid_hex
+    LEA     string_invalid_hex,A1               *Load the invalid hex string
+sub_get_input_hex_output_invalid
+    MOVE.L  #13,D0                              *Setup for string output
+    TRAP    #15                                 *Output the error message
+    BRA     sub_get_input_hex                   *Go back to get another hex
+sub_get_input_hex_rts
+    MOVE.L  D3,D0                               *Return the address through D0
+    RTS
 
 **************************************************************
 *
@@ -1199,8 +1300,9 @@ output_string               DS.B    120
 output_string_displacement  DS.W    1
 current_addr                DS.L    1
 current_addr_backup         DS.L    1
-current_addr_def_backup     DS.L    1
+end_addr                    DS.L    1
 invalid_op_flag             DS.B    1
+input                       DS.B    80   *Allocated dead space to store input values
 
 ******* STRINGS *********
 
@@ -1208,6 +1310,10 @@ hex_characters  DC.B    '0123456789ABCDEF'
 
 string_press_enter   DC.B    'Press enter to continue...',0
 string_end           DC.B    'Reached end address. Program halted.',0
+string_invalid_size  DC.B    'Address too large!',0
+string_invalid_hex   DC.B    'Not a valid hex value!',0
+string_enter_start   DC.B    'Enter a starting hex address: ',0
+string_enter_stop    DC.B    'Enter a stopping hex address: ',0
 
 * Put variables and constants here
 
@@ -1704,8 +1810,9 @@ BS  EQU $8
     ADD     #5,D3
     ADDI    #$7B,D3
     MOVE    $12345678,D3
-END
+    
     END    START        ; last line of source
+
 
 
 
