@@ -1844,19 +1844,7 @@ sub_op_moveq
 
     ORG     $3000
 
-    MOVEA.W  A0,A0
-    MOVEA.W  A0,A0
-    MOVEA.W  (A0),A0
-    MOVEA.W  (A0)+,A0
-    MOVEA.W  -(A0),A0
-    MOVEA.W  $1000,A0
-    MOVEA.W  $FFFF,A0
-    MOVEA.W  $12341234,A0
-    MOVEA.W  $FFFFFFFF,A0
-    MOVEA.W  #$1234,A0
-    MOVEA.W  #$12,A0
-    MOVEA.W  #$1,A0
-    MOVEA.W  #$123,A0
+    MOVE.W  #$12345678,$87654321
 
     ANDI    #5,CCR
     AND     #4,D5
