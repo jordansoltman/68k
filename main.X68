@@ -892,7 +892,7 @@ sub_get_next_abs_size    DS.W    1
     ORG *
 
 sub_get_next_abs
-    MOVE.L  sub_get_next_abs_size(SP),D1                * load size to D1
+    MOVE.W  sub_get_next_abs_size(SP),D1                * load size to D1
     MOVEA.L current_addr,A0                             * load current address to A0
 
     CMP.W   #long_size,D1                               * compare size to long
@@ -1843,11 +1843,21 @@ sub_op_moveq
 ******************************************************************************************************************************************
 
     ORG     $3000
-    MOVEQ   #$44,D5
-    MOVEM.L D0-D7,-(SP)
-    ADD     #5,D3
-    ADDI    #$7B,D3
-    MOVE    $12345678,D3
+
+    MOVEA.W  A0,A0
+    MOVEA.W  A0,A0
+    MOVEA.W  (A0),A0
+    MOVEA.W  (A0)+,A0
+    MOVEA.W  -(A0),A0
+    MOVEA.W  $1000,A0
+    MOVEA.W  $FFFF,A0
+    MOVEA.W  $12341234,A0
+    MOVEA.W  $FFFFFFFF,A0
+    MOVEA.W  #$1234,A0
+    MOVEA.W  #$12,A0
+    MOVEA.W  #$1,A0
+    MOVEA.W  #$123,A0
+
     ANDI    #5,CCR
     AND     #4,D5
     ADD     #5,D3
@@ -1865,6 +1875,7 @@ sub_op_moveq
     MOVE    $12345678,D3
 
     END    START
+
 
 
 *~Font name~Courier New~
