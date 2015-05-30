@@ -1,26 +1,31 @@
-*-----------------------------------------------------------
-* Title      :
-* Written by :
-* Date       :
-* Description:
-*-----------------------------------------------------------
+******************************************************************************************************************************************
+* Title      : 68K Disassembler
+* Written by : Sam Hoover & Jordan Soltman
+* Date       : May 30, 2015
+* Description: When given a starting address and ending address this program will disassembler to the screen until it reaches the ending
+*              address. For more details on operation see the Disassembler Documentation.
+******************************************************************************************************************************************
 
     ORG    $1000
 
 START
-    
+
     MOVE.L  #string_enter_start,-(SP)           *Load the start address prompt to the stack
     BSR     sub_get_input_hex                   *Get the starting address to D0
     LEA     4(SP),SP                            *Reset the stack pointer
-    
+
     MOVE.L  D0,current_addr                     *Store the start as the current address
-    
+
     MOVE.L  #string_enter_stop,-(SP)            *Load the ending address to the stack
     BSR     sub_get_input_hex                   *Get the end address to D0
     LEA     4(SP),SP                            *Reset the stack pointer
-            
+
     MOVE.L  D0,end_addr                         *Store the ending address
-    
+
+    MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
+    MOVEQ   #11,D0                              *Move trap 11 to clear screen
+    TRAP    #15                                 *Clear the screen
+
     MOVE.B  #0,D3                               *We will use D3 as a counter for line output
 
 LOOP
@@ -57,17 +62,17 @@ LOOP_OPCODES                                    *Begin to loop through the opcod
     CMP.W   D1,D2                               *See if it's a match
 
     BNE     LOOP_OPCODES                        *Try the next opcode
-    
+
 LOOP_OPDEFS
 
-    MOVE.W  (A2)+,A3
+    MOVE.W  (A2)+,A3                            *Get the next opcode definition address
 
     CMP.W   #op_code_term,A3                    *See if we are at the end of the opcode
     BEQ     LOOP_OPCODES                        *If so we'll continue trying other opcodes
 
     CLR.W   output_string_displacement          *Reset the string displacement so we can write again
     CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
-    MOVE.L  A0,current_addr    *Reset the address to the current address
+    MOVE.L  A0,current_addr                     *Reset the address to the current address
 
     MOVEM.L D0-D3/A0-A2,-(SP)                   *Save D0
     BSR     sub_build_current_line_address      *Print out the current line address
@@ -93,11 +98,11 @@ OUTPUT_DATA
 
 WAIT
 
-    LEA     string_press_enter,A1                *Load the press enter message
+    LEA     string_press_enter,A1               *Load the press enter message
     MOVEQ   #14,D0                              *Setup for outputing a string
     TRAP    #15                                 *Output the string
 
-    LEA  input,A1                             *Point A1 at the end of the program so that any input is dumped
+    LEA  input,A1                               *Point A1 at the end of the program so that any input is dumped
 
     MOVEQ   #2,D0                               *Setup to input a string
     TRAP    #15                                 *Input a string (we don't need the result)
@@ -114,7 +119,7 @@ DONE
     LEA     string_end,A1                       *Load the ending message
     MOVEQ   #14,D0                              *Setup for outputing a string
     TRAP    #15                                 *Output the string
-    SIMHALT             ; halt simulator
+    SIMHALT
 
 OUTPUT
     LEA     output_string,A1                    *Get the output string and put it in A1
@@ -123,11 +128,28 @@ OUTPUT
     BRA     LOOP                                *Return to the master loop
 
 
+
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+************************************************************** SUBROUTINES ***************************************************************
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+
+
+
 **************************************************************
 *
 * sub_process_opcode
 *
-* * 1 (L): Address of operation definition
+* This method processes opcode definitions and outputs the final result to the output_string global. If the
+* operation code was processed and an error was found, the invalid_op_flag will be set to true. If the invalid
+* opflag is set true, the opcode should not be considered valid given the definition and any output may be
+* incomplete and should be discarded.
+*
+* For a complete discussion on how this method processes operations see the Disassembler Documentation: SDL section.
+*
+* Stack parameters:
+* 1 (L): Address of operation definition
 *
     OFFSET 4
 sub_process_opcode_addr DS.L    1
@@ -147,52 +169,52 @@ sub_process_opcode
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
 
     MOVE.W  (A0)+,D1                        *Get the size type or terminating opf or cond info
-    
+
     **** Condition operand
     CMP.W   #opf_cond,D1                    *See if we have a condition
     BNE     sub_process_opcode_check_size   *If not continue on
-    
+
     MOVE.W  (A0)+,D1                        *Get the condition bit location
-    
+
     MOVEM.L D0/A0,-(SP)                     *Backup the registers
     MOVE.W  D1,-(SP)                        *Put the bit position in D1
     MOVE.W  #4,-(SP)                        *set our size to 4 for the condition code
     BSR     sub_handy_mask                  *Grab the condition to D1
     LEA     4(SP),SP                        *Reset the stack pointer
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
-    
+
     MOVE.W  (A0)+,D2                        *Get the boolean to determine if we should include true and false
     CMP.W   #false,D2                       *Check if it's false
     BEQ     sub_process_opcode_skip_tf      *If it is we'll skip tf
-    
+
     MOVEA.L #conditions,A1                  *Otherwise load all the conditions
-    
+
     BRA     sub_process_opcode_check_cond   *Jump to check the condition
-    
+
 sub_process_opcode_skip_tf
-    
+
     MOVEA.L #conditions_stf,A1              *Load the conditions without true and false
-    
+
 sub_process_opcode_check_cond
-    
+
     MOVE.W  (A1)+,D2                        *Store the condition code to D2
-    CMP.W   #cond_term,D2                   *See if it's the 
+    CMP.W   #cond_term,D2                   *See if it's the
     BEQ     sub_process_opcode_rts_invalid  *It must be an invalid condition type because we've run out of options
-    
+
     MOVE.W  (A1)+,D3                        *Get the address of the condition string
-    
+
     CMP.W   D2,D1                           *see if the current condition is the right one
     BNE     sub_process_opcode_check_cond   *Go back through the loop
-    
+
     MOVEM.L D0/A0,-(SP)                     *Backup the registers
     MOVE.L  D3,-(SP)                        *Put the string address on the stack
     BSR     sub_build_string                *Build the condition code
     LEA     4(SP),SP                        *Reset the stack pointer
     MOVEM.L (SP)+,D0/A0                     *Restore the registers
-    
+
     MOVE.W  (A0)+,D1                        *Get the next token to hanle size or opf_term
 
-sub_process_opcode_check_size    
+sub_process_opcode_check_size
 
     CMP.W   #opf_term,D1                    *See if we have terminated
     BEQ     sub_process_opcode_rts          *We are done with this code so we'll return
@@ -204,7 +226,7 @@ sub_process_opcode_check_size
     BNE     sub_process_opcode_opf_sizes    *Must support different sizes (not a single size)
 
     MOVE.W  (A0)+,D7                        *Store the size in D7
-    BRA     sub_process_opcode_tab
+    BRA     sub_process_opcode_tab          *Skip to outputing a tab
 
 sub_process_opcode_opf_sizes
 
@@ -249,7 +271,7 @@ sub_process_opcode_tab
 
 sub_process_opcode_flip_loop
     CMP.W   #opf_flipped,(A0)+              *Get next bit and increment by one
-    BEQ     sub_process_opcode_types
+    BEQ     sub_process_opcode_types        *We are back processing opcodes
     BRA     sub_process_opcode_flip_loop    *If we are at the opf_flipped bit we are done and ready to output
 
 sub_process_opcode_back_types
@@ -292,15 +314,15 @@ sub_process_opcode_types
 
 sub_process_opcode_types_reg
 
-    CMP.W   #opf_reg,D1
-    BNE     sub_process_opcode_types_cnt_reg
+    CMP.W   #opf_reg,D1                         *See if its a register field
+    BNE     sub_process_opcode_types_cnt_reg   *If not check if it's a count/register field
 
     ** code for reg
 
 sub_process_opcode_types_reg_qwk            *Quick access to reg
 
     MOVE.W  (A0)+,D1                        *Get starting bit position
-    MOVE.W  (A0)+,D2                        *Get register mode (ea_reg_dir | ea_add_dir)
+    MOVE.W  (A0)+,D2                        *Get register mode
 
     MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
 
@@ -431,13 +453,13 @@ sub_process_opcode_types_sub
     MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
     JSR     (A1)                            *Call the custom subroutine
     MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
-    
+
     BRA     sub_process_opcode_types_next   *Go to next
-    
+
 sub_process_opcode_types_string
 
     MOVE.W  (A0)+,A1                        *Get the address of the string
-    
+
     MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
     MOVE.L  A1,-(SP)                        *Put the string address on the stack
     BSR     sub_build_string                *Build the string
@@ -459,7 +481,7 @@ sub_process_opcode_types_next
     MOVEM.L (SP)+,A0/D0/D7                  *Restore the registers
 
     BRA     sub_process_opcode_back_types   *Go back and get start again
-    
+
 sub_process_opcode_rts_invalid
 
     MOVE.B  #true,invalid_op_flag           *Set the invalid op flag to true
@@ -472,32 +494,36 @@ sub_process_opcode_rts
 *
 * sub_build_data
 *
-* Puts a null character at the end
+* Build data looks to the current address to print out first the address, then 'DATA', and then
+* the data (of word size) at that address in hex form. This method will increment the current_address
+* counter by word_size.
+*
+* This method accepts no arguments and has no returns.
 *
 
 sub_build_data
 
-    CLR.W   output_string_displacement      *Reset the string displacement so we can write again
+    CLR.W       output_string_displacement      *Reset the string displacement so we can write again
 
     BSR         sub_build_current_line_address  *Print out the current line
 
-    MOVE.L      #data_string,-(SP)          *Load the position of 'DATA' to the stack
-    BSR         sub_build_string            *Output DATA
-    LEA         4(SP),SP                    *Reset the stack pointer
+    MOVE.L      #string_data,-(SP)              *Load the position of 'DATA' to the stack
+    BSR         sub_build_string                *Output DATA
+    LEA         4(SP),SP                        *Reset the stack pointer
 
-    BSR         sub_tab                     *Output it
+    BSR         sub_tab                         *Output it
 
-    MOVE.L      current_addr_backup,A0      *Get the backup address and put it in A0
-    CLR.L       D0                          *Clear D0
-    MOVE.W      (A0),D0                     *Load the value at A0 (the word) to D0
+    MOVE.L      current_addr_backup,A0          *Get the backup address and put it in A0
+    CLR.L       D0                              *Clear D0
+    MOVE.W      (A0),D0                         *Load the value at A0 (the word) to D0
 
-    MOVE.L      D0,-(SP)                    *Move the value to the stack
-    MOVE.W      #true,-(SP)                 *We want to print a hex symbol so #true
-    MOVE.W      #word_size,-(SP)            *Ops are always of word size
-    BSR         sub_build_hex_string        *Build the string
-    LEA         8(SP),SP                    *Reset the pointer
+    MOVE.L      D0,-(SP)                        *Move the value to the stack
+    MOVE.W      #true,-(SP)                     *We want to print a hex symbol so #true
+    MOVE.W      #word_size,-(SP)                *Ops are always of word size
+    BSR         sub_build_hex_string            *Build the string
+    LEA         8(SP),SP                        *Reset the pointer
 
-    BSR         sub_build_finish            *Finish out the output with a terminating 0
+    BSR         sub_build_finish                *Finish out the output with a terminating 0
 
     RTS
 
@@ -505,16 +531,21 @@ sub_build_data
 *
 * sub_get_input_hex
 *
+* This method will first output the string passed on the stack as a prompt, then will process the entered value
+* as a hex. If there are invalid characters, it is empty, or it is larger than 8 characters (leading zeros not included)
+* the method will prompt again until a valid address is entered. The return value (through D0) is garaunteed to be
+* a valid number between $00000000 and $FFFFFFFF
+*
 * Stack Parameters:
 * 1 (L): The address null terminated byte string to be output as a prompt
 *
-* Return Registers
-* 1 (L): The address is returned as a long through D0
+* Return Registers:
+* D0 (L): The processed hex value
 *
     OFFSET  4
 sub_get_input_hex_prompt  DS.L  1
     ORG *
-    
+
 sub_get_input_hex
 
     MOVE.L  #14,D0                              *Setup for string output
@@ -523,64 +554,64 @@ sub_get_input_hex
 
     MOVE.L  #2,D0                               *Setup for keyboard input
     LEA     input,A1                            *Load the ending address to store the input string
-    TRAP    #15                                 *Get the input string and the size to D1.W   
-    
+    TRAP    #15                                 *Get the input string and the size to D1.W
+
     CMP.W   #0,D1                               *See if no string was entered
     BEQ     sub_get_input_hex_invalid_hex       *If so it's invalid
-    
+
     CLR.L   D3                                  *D3 will be for output
-    
+
 sub_get_input_hex_lead_zeros
 
     MOVE.B  (A1),D2                             *Get the first byte
     CMP.B   #$30,D2                             *See if it's 0
     BNE     sub_get_input_hex_check_size        *If not we'll go on to check the hex string size
-    
+
     CMP.W   #0,D1                               *See if we have run out of characters
     BEQ     sub_get_input_hex_rts               *If so the hex must be 0x0
-    
+
     SUBQ.W  #1,D1                               *If so, subtract one from the total size
     LEA     1(A1),A1                            *Move our address up by one
-    
+
     BRA     sub_get_input_hex_lead_zeros        *Loop back to check the next 0
-    
+
 sub_get_input_hex_check_size
 
     CMP.W   #8,D1                               *See if our size is greater than 8
     BGT     sub_get_input_hex_invalid_size      *If we have more than 8 characters it's too big
-    
+
 sub_get_input_hex_parse
-    
+
     CMP.W   #0,D1                               *See if we are out of characers
     BEQ     sub_get_input_hex_rts               *If so we'll return
     SUBQ    #1,D1                               *Otherwise subtract one from the size as a counter
-    
+
     MOVE.B  (A1)+,D2                            *Get the next character
-    
+
     CMP.B   #$61,D2                             *See if it's greater than $61 (lowercase letters)
     BLT     sub_get_input_hex_parse_uc          *If not check undercase letters
     SUB.B   #$57,D2                             *Subtract $57 so it'll be in the range A to infinity
     BRA     sub_get_input_hex_parse_output      *Continue to the output
-    
+
 sub_get_input_hex_parse_uc
     CMP.B   #$41,D2                             *See if it's greater than $41 (uppercase letters)
     BLT     sub_get_input_hex_parse_num         *If it's less than we'll check numbers 0-9
     SUB.B   #$37,D2                             *Subtract $47 so it'll be in the range a...A
     BRA     sub_get_input_hex_parse_output      *Contine to the output
-    
+
 sub_get_input_hex_parse_num
     CMP.B   #$30,D2                             *Compare against the numeric range
     BLT     sub_get_input_hex_invalid_hex       *If it's less, it must be an invalid character
     SUB.B   #$30,D2                             *Otherwise subract 30 to get in the range 0-a
-    
-sub_get_input_hex_parse_output   
-    
+
+sub_get_input_hex_parse_output
+
     CMP.B   #15,D2                              *See if it's greater than 15 (f)
     BGT     sub_get_input_hex_invalid_hex       *If so it's invalid
     LSL.L   #4,D3                               *Make room for the characer
     ADD.B   D2,D3                               *Put it onto the address
     BRA     sub_get_input_hex_parse             *Go back for the next character
-        
+
 sub_get_input_hex_invalid_size
     LEA     string_invalid_size,A1              *Load the invalid size string
     BRA     sub_get_input_hex_output_invalid    *Branch to output the string
@@ -598,7 +629,10 @@ sub_get_input_hex_rts
 *
 * sub_build_finish
 *
-* Puts a null character at the end
+* This method outputs a null byte to the end of the global output_string so that it can be processed for output
+* by an output method. After calling this method any output to the output_string will be ignored.
+*
+* This method accepts no arguments and has no return value.
 *
 sub_build_finish
     MOVEA.L     #output_string,A0               *Load the output string
@@ -611,11 +645,14 @@ sub_build_finish
 *
 * sub_build_current_line_address
 *
-* Outputs the current line
+* This method uses the current_addr_backup and outputs that value to output_string as a word if it's less than
+* $FFFF and as a long if it's greater than $FFFF.
+*
+* This method accepts no arguments and has no return value.
 *
 sub_build_current_line_address
     MOVE.L      current_addr_backup,D1          *Get the address
-    MOVE.L      D1,-(SP)                        *Put the address on the stack      
+    MOVE.L      D1,-(SP)                        *Put the address on the stack
     MOVE.W      #false,-(SP)                    *We don't want to output a hex symbol for the address
     CMP.L       #$FFFF,D1                       *Compare against the max address of a word
     BGT         sub_build_current_line_long     *Use a long size
@@ -635,7 +672,12 @@ sub_build_current_line_build
 *
 * sub_build_char
 *
-* Adds a single character to the output string
+* This method takes a single ascii character as a byte on the stack and outputs it to the output_string.
+* If a backspace character is output, the output_string_displacement will be decreased by one, essentially
+* erasing a single character from the end of the string.
+*
+* Stack Parameters:
+* 1 (W) : the ascii character that should be output to the output_string
 *
     OFFSET 4
 sub_build_char_ascii DS.W    1
@@ -655,14 +697,15 @@ sub_build_char_output
     MOVE.B      D1,(A0)+                        *Move the character on
     ADDQ.W      #byte_size,D0                   *Increase by one
 sub_build_char_rts
-    MOVE.W      D0,output_string_displacement
+    MOVE.W      D0,output_string_displacement   *Save the displacement back to the global variable
     RTS
 
 **************************************************************
 *
 * sub_build_string
 *
-* Print value at address
+* This method will output the null terminated byte string at the given address to output_string.
+* This method has no return value.
 *
 * Parameters:
 * 1 (L): 0 terminated string address to add onto string
@@ -686,9 +729,11 @@ sub_build_string_rts
 *
 * sub_build_hex_string
 *
-* Print value at address
+* This method takes a value to convert to hex, a boolean to indicate if a '$' symbol should be printed preceeding
+* the value, and a size (byte_size, word_size, or long_size) to indicate the size to print. The value of the
+* hex is output to output_string. This method does not return anything.
 *
-* Parameters
+* Stack Parameters
 * 1 (L): Value that should be converted to hex and added to string
 * 2 (W): Boolean IN (true, false) that determines if it should print the $ symbol in front
 * 3 (W): Size IN (byte_size, word_size, long_size) that determines what size to print as
@@ -738,11 +783,13 @@ sub_build_hex_string_rts
 *
 * sub_build_ea_string
 *
-* Adds an EA to the string
+* This method takes an addressing mode as defined by one of the ea_modes_, a register number, and
+* a size (used in absolute modes). This method will output to the output_string the correct addressing mode
+* string as defined by the parameters. This method has no return.
 *
-* Paremeters:
+* Stack Parameters:
 * 1 (W): Mode in defined ea_modes_[X]
-* 2 (W): Register 0-7
+* 2 (W): Register number 0-7
 * 3 (W): (For Immediate) Size can be passed in as byte_size, word_size, or long_size NOTE: no_size if not immediate
 
     OFFSET 4
@@ -831,37 +878,41 @@ sub_build_ea_string_rts
 *
 * sub_get_next_abs
 *
-* Grabs the next
+* This method will get the next value from the current_addr and returns it via D1. The size
+* (either word_size or long_size) should be passed on the stack.
 *
 * Stack Parameters:
 * 1 (W): Size defined by either word_size or long_size
 *
 * Return Registers:
-* 1 (W/L): Returns the word or long in D1
+* D1 (W/L): The word or long value
 
     OFFSET 4
 sub_get_next_abs_size    DS.W    1
     ORG *
 
 sub_get_next_abs
-    MOVE.W  sub_get_next_abs_size(SP),D1              * load size to D1
+    MOVE.L  sub_get_next_abs_size(SP),D1                * load size to D1
     MOVEA.L current_addr,A0                             * load current address to A0
 
     CMP.W   #long_size,D1                               * compare size to long
-    BEQ     sub_get_next_abs_long                     * branch to special case if true
+    BEQ     sub_get_next_abs_long                       * if it's a long advance
     MOVE.W  (A0)+,D1                                    * get next word
-    BRA     sub_get_next_abs_adj
+    BRA     sub_get_next_abs_adj                        * branch to return
 sub_get_next_abs_long
     MOVE.L  (A0)+,D1                                    * get next long
 sub_get_next_abs_adj
-    MOVE.L  A0,current_addr                             * set current address to value of A0
+    MOVE.L  A0,current_addr                             * update the current address
     RTS
 
 **************************************************************
 *
 * sub_build_direct_string
 *
-* Directly builds an EA string for register or address direct with a given number
+* This method is a convience method to output an address or data register to the output_string
+* with a number found in the opcode. The first stack parameter should be the ea mode that will
+* be used (NOTE: cannot be ea_abs) and the second parameter should be the starting bit position
+* where the number can be found in the opcode. D0 should have the opcode string in it.
 *
 * Stack Parameters:
 * 1 (W): Mode in defined ea_reg_dir or ea_add_dir
@@ -895,6 +946,10 @@ sub_build_direct_string
 **************************************************************
 *
 * sub_build_displacement
+*
+* This method takes a displacement offset, adds the value to the current address, and outputs it to
+* the output_string. If the displacement value is #word_displace the next value word is taken
+* and used to calculate the displacement address. This method returns nothing.
 *
 * Stack Parameters:
 * 1 (W): Displacement offset
@@ -1012,7 +1067,11 @@ sub_check_build_op_flag_invalid
 *
 * sub_check_ea_string
 *
-* Adds an EA to the string
+* This method takes an address to the valid modes, a starting bit location for the mode, a starting bit location
+* for the register, and the size of the calling operand on the stack. This method will first verify that the current
+* addressing mode is included in the list of available modes. If it is, the value is taken and the EA mode is output
+* to the output string. If there is an error due to an invalid mode, the invalid_op_flag will be set true and the
+* method will return. The value of the output_string may be incorrect and should be discarded.
 *
 * Stack Parameters:
 * 1 (L): Address of valid modes
@@ -1099,7 +1158,8 @@ sub_check_ea_string_rts
 *
 * sub_build_string_comma_space
 *
-* Adds a single comma to the string
+* This method puts a comma and then a space onto the output_string. It does not take
+* any parameters and has no return.
 *
 sub_build_string_comma_space
     MOVEA.L     #output_string,A0                   *Load the output string
@@ -1116,7 +1176,9 @@ sub_build_string_comma_space
 *
 * sub_tab
 *
-* Adds a single comma to the string
+* This method will first find the next tab stop from the current output_string_displcament and then fill the
+* output strings with spaces until it gets to that position. This acts as a flexible tab stop. This method
+* takes no parameters and has no return values.
 *
 sub_tab
     MOVEA.L     #tab_stops,A0
@@ -1137,14 +1199,13 @@ sub_tab_rts
     MOVE.W      D1,output_string_displacement
     RTS
 
-
-
 **************************************************************
 *
 * sub_handy_mask
 *
 * Given a value, lower bound, and size, this method will return the masked
-* values starting from the LSB to D0
+* values starting from the LSB to D0 and return them through D1. This can be used
+* to quickly get the values from a hex string.
 *
 * Register Parameters
 * D0 (L): Should contain the value to mask and split
@@ -1181,175 +1242,167 @@ sub_handy_mask_done
     RTS
 
 
-*********** CONSTANTS ***********
 
-tab_stops       DC.B    12,24,36
-clear_screen    EQU     $FF00
 
-true                EQU 1
-false               EQU 0
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+********************************************************** CONSTANT DEFINITIONS **********************************************************
+******************************************************************************************************************************************
+******************************************************************************************************************************************
 
-word_displace       EQU $00
-long_displace       EQU $FF
 
-nibble_size         EQU 0   *This representation cannot be used mathematically
-byte_size           EQU 1
-word_size           EQU 2
-long_size           EQU 4
-no_size             EQU $F
 
-right_nibble_mask   EQU $000F
-null                EQU 0
 
-* EA MODES
+clear_screen                EQU     $FF00
 
-ea_reg_dir          EQU %000
-ea_add_dir          EQU %001
-ea_ari              EQU %010
-ea_ari_post         EQU %011
-ea_ari_pre          EQU %100
+true                        EQU     1
+false                       EQU     0
 
-ea_abs              EQU %111    *This MUST preceed each ea_word,ea_long,ea_imm
-ea_word             EQU %000    *Used in conjunction with abs
-ea_long             EQU %001    *Used in conjunction with abs
-ea_imm              EQU %100    *Used in conjunction with abs
+word_displace               EQU     $00
+long_displace               EQU     $FF
 
-ea_term             EQU %1111   *Terminates a list of ea modes
-ea_all              EQU %1110   *Declares that all ea modes are accepted
+nibble_size                 EQU     0   *This representation cannot be used mathematically
+byte_size                   EQU     1
+word_size                   EQU     2
+long_size                   EQU     4
+no_size                     EQU     $F
+
+right_nibble_mask           EQU     $000F
+null                        EQU     0
+
+cond_term                   EQU     $FFFF
+op_code_term                EQU     $FFFF
+op_codes_term               EQU     $0000
+
+BS                          EQU     $8
+
+*** ea modes ***
+
+* These are the constants that define available EA modes. Their use is outlined in the Disassembler Documentation in the
+* SDL section.
+
+ea_reg_dir                  EQU     %000
+ea_add_dir                  EQU     %001
+ea_ari                      EQU     %010
+ea_ari_post                 EQU     %011
+ea_ari_pre                  EQU     %100
+
+ea_abs                      EQU     %111    *This MUST preceed each ea_word,ea_long,ea_imm
+ea_word                     EQU     %000    *Used in conjunction with ea_abs
+ea_long                     EQU     %001    *Used in conjunction with ea_abs
+ea_imm                      EQU     %100    *Used in conjunction with ea_abs
+
+ea_term                     EQU     %1111   *Terminates a list of ea modes
+ea_all                      EQU     %1110   *Declares that all ea modes are accepted
 
 *** opf definitions ***
-* label [op name string address],{[size],[flip bit],[type],[type],opf_flipped,[type],[type],}[opf_term]
-*
-*   add opf_imm
-*
-* [size] =
-* opf_size [byte_size | word_size | long_size]
-* OR
-* opf_sizes [size bit pos],[byte size rep | no_size], [word size rep | no_size], [long size rep | no_size]
-*
-* [flip bit] =
-* opf_flip  [bit position of indicator]
-*
-* [type] =
 
-*** opf_ea ***
-* 1) acceptable ea modes address
-* 2) mode start bit position
-* 3) reg start bit position
-opf_ea          EQU     0
+* These opf_ definitions are used to define opcode functionality. Their use is defined in the Disassembler Documentation
+* in the SDL section.
 
-*** opf_count ***
-* 1) start bit position
-opf_count       EQU     1
-
-*** opf_reg ***
-* 1) start bit position
-* 2) type (either ea_reg_dir or ea_add_dir)
-opf_reg         EQU     2
-
-opf_reg_add     EQU     3
-
-*** opf_count_reg ***
-* 1) determinent bit position (where it is determined if it's a count or register)
-* 2) start bit position
-* 3) type (either ea_reg_dir or ea_add_dir)
-opf_count_reg   EQU     4
-
-opf_imm         EQU     5
-
-opf_disp        EQU     6
-
-*** opf_sub ***
-* Passes control to a subroutine
-* 1) address of subroutine
-opf_sub         EQU      7
-
-opf_string      EQU      8
-
-opf_cond        EQU      9
-
-opf_vector      EQU     10
+opf_ea                      EQU     0
+opf_count                   EQU     1
+opf_reg                     EQU     2
+opf_reg_add                 EQU     3
+opf_count_reg               EQU     4
+opf_imm                     EQU     5
+opf_disp                    EQU     6
+opf_sub                     EQU     7
+opf_string                  EQU     8
+opf_cond                    EQU     9
+*opf_vector                 EQU     10 * not supported yet *
+opf_flip                    EQU     11
+opf_flipped                 EQU     12
+opf_sizes                   EQU     13
+opf_size                    EQU     14
+opf_no_size                 EQU     15
+opf_term                    EQU     16
 
 
-*** opf_flip ***
-* Determines if A and B can be flipped
-* 1) bit position
-opf_flip        EQU     11
-
-opf_flipped     EQU     12
-
-*** opf_sizes ***
-* 1) determinent bit position (starting location where size can be determined)
-* 2) byte representation or no_size
-* 3) word representation or no_size
-* 4) long representation or no_size
-opf_sizes       EQU     13
-
-*** opf_size_only ***
-* 1) size (in byte_size, word_size, long_size)
-opf_size        EQU     14
-
-opf_no_size     EQU     15
-
-opf_term        EQU      16
 
 
-******* STORAGE **********
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+*********************************************************** STORAGE AND GLOBALS **********************************************************
+******************************************************************************************************************************************
+******************************************************************************************************************************************
 
-output_string               DS.B    120
-output_string_displacement  DS.W    1
+
+
+
+*** globals ***
+
+* These are the global variables for the program
+
+output_string               DS.B    120 *Used to build the output
+output_string_displacement  DS.W    1   *Used to track the current location in the output string
 current_addr                DS.L    1
 current_addr_backup         DS.L    1
 end_addr                    DS.L    1
 invalid_op_flag             DS.B    1
-input                       DS.B    80   *Allocated dead space to store input values
+input                       DS.B    80  *Allocated dead space to store input values
 
-******* STRINGS *********
+*** strings ***
 
-hex_characters  DC.B    '0123456789ABCDEF'
+* These strings are used for output and other tasks
 
-string_press_enter   DC.B    'Press enter to continue...',0
-string_end           DC.B    'Reached end address. Program halted.',0
-string_invalid_size  DC.B    'Address too large!',0
-string_invalid_hex   DC.B    'Not a valid hex value!',0
-string_enter_start   DC.B    'Enter a starting hex address: ',0
-string_enter_stop    DC.B    'Enter a stopping hex address: ',0
+hex_characters              DC.B    '0123456789ABCDEF'  *Used to build hex strings. Do not change.
+string_press_enter          DC.B    'Press enter to continue...',0
+string_end                  DC.B    'Reached end address. Program halted.',0
+string_invalid_size         DC.B    'Address too large!',0
+string_invalid_hex          DC.B    'Not a valid hex value!',0
+string_enter_start          DC.B    'Enter a starting hex address: ',0
+string_enter_stop           DC.B    'Enter a stopping hex address: ',0
+string_data                 DC.B    'DATA',0
 
-* Put variables and constants here
+* These strings should not be changed and are used to build opcode labels for conditions
 
-print_blank         DC.B    0
+cond_t                      DC.B    'T',0
+cond_f                      DC.B    'F',0
+cond_hi                     DC.B    'HI',0
+cond_ls                     DC.B    'LS',0
+cond_cc                     DC.B    'CC',0
+cond_cs                     DC.B    'CS',0
+cond_ne                     DC.B    'NE',0
+cond_eq                     DC.B    'EQ',0
+cond_vc                     DC.B    'VC',0
+cond_vs                     DC.B    'VS',0
+cond_pl                     DC.B    'PL',0
+cond_mi                     DC.B    'MI',0
+cond_ge                     DC.B    'GE',0
+cond_lt                     DC.B    'LT',0
+cond_gt                     DC.B    'GT',0
+cond_le                     DC.B    'LE',0
 
-cond_term           EQU     $FFFF
-op_code_term        EQU     $FFFF
-op_codes_term       EQU     $0000
+*** settings ***
 
-******** CONDITIONS ARRAY *********
+* Tab stops can be changed here to modify how things are output to the string.
 
-cond_t          DC.B    'T',0
-cond_f          DC.B    'F',0
-cond_hi         DC.B    'HI',0
-cond_ls         DC.B    'LS',0
-cond_cc         DC.B    'CC',0
-cond_cs         DC.B    'CS',0
-cond_ne         DC.B    'NE',0
-cond_eq         DC.B    'EQ',0
-cond_vc         DC.B    'VC',0
-cond_vs         DC.B    'VS',0
-cond_pl         DC.B    'PL',0
-cond_mi         DC.B    'MI',0
-cond_ge         DC.B    'GE',0
-cond_lt         DC.B    'LT',0
-cond_gt         DC.B    'GT',0
-cond_le         DC.B    'LE',0
+tab_stops                   DC.B    12,24,36
 
-conditions      DC.W    %0000,cond_t,%0001,cond_f
+*** condition definitions ***
+
+* These condition definitions are used to output the cc labels
+
+conditions                  DC.W    %0000,cond_t,%0001,cond_f
 * stf (no true false) allows skipping of true and false
-conditions_stf  DC.W    %0010,cond_hi,%0011,cond_ls,%0100,cond_cc,%0101,cond_cs,%0110,cond_ne,%0111,cond_eq,%1000,cond_vc
-                DC.W    %1001,cond_vs,%1010,cond_pl,%1011,cond_mi,%1100,cond_ge,%1101,cond_lt,%1110,cond_gt,%1111,cond_le,cond_term
+conditions_stf              DC.W    %0010,cond_hi,%0011,cond_ls,%0100,cond_cc,%0101,cond_cs,%0110,cond_ne,%0111,cond_eq,%1000,cond_vc
+                            DC.W    %1001,cond_vs,%1010,cond_pl,%1011,cond_mi,%1100,cond_ge,%1101,cond_lt,%1110,cond_gt,%1111,cond_le,cond_term
 
-******** OPCODES ARRAY ***********
-* An array of opcodes (starting with 'op_codes') that will be tested
-* in this order.
+
+
+
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+************************************************************ OPCODE DEFINITIONS **********************************************************
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+
+
+*** opcode array ***
+
+* All opcodes that should be checked should be in this array. The order is not important. Whenever a new opcode is defined, it should be
+* placed here so that it is processed.
 
 op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
                 DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
@@ -1361,9 +1414,9 @@ op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_cod
                 DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
                 DC.W    op_code_scc,op_code_andi,op_code_andi_ccr,op_code_and,op_code_addq,op_code_addi,op_code_moveq,0
 
-************** OP CODE DEFINITIONS ***************
+*** opcode definitions ***
 
-data_string     DC.B    'DATA',0
+* Each opcode below defines an opcodes operation. The definition syntax is defined in the Disassembler Documentation in the SDL section.
 
 op_string_lea   DC.B    'LEA',0
 op_code_lea     DC.W    $41C0,$F1C0,op_def_lea,op_code_term
@@ -1533,25 +1586,25 @@ op_def_bclrL2   DC.W    op_string_bclr,opf_size,long_size,opf_sub,sub_op_bclr,op
 op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrB,3,0,opf_term
 
 sub_op_bclr
-    MOVE.W  #'#',-(SP)              *Push the pound sign to the stack
-    BSR     sub_build_char          *Output the hex
-    LEA     2(SP),SP                *Reset the stack
+    MOVE.W      #'#',-(SP)              *Push the pound sign to the stack
+    BSR         sub_build_char          *Output the hex
+    LEA         2(SP),SP                *Reset the stack
 
-    MOVE.W  #word_size,-(SP)        *We need the word
-    BSR     sub_get_next_abs        *Get the next absolute to D1
-    LEA     2(SP),SP                *Reset the pointer
+    MOVE.W      #word_size,-(SP)        *We need the word
+    BSR         sub_get_next_abs        *Get the next absolute to D1
+    LEA         2(SP),SP                *Reset the pointer
 
-    MOVE.L  D1,D0                   *Put the value in D0 for handy mask
-    MOVE.W  #0,-(SP)                *We want the byte at index 0
-    MOVE.W  #8,-(SP)                *And we want the whole byte
-    BSR     sub_handy_mask          *Get the value to D1
-    LEA     4(SP),SP                *Reset the stack pointer
+    MOVE.L      D1,D0                   *Put the value in D0 for handy mask
+    MOVE.W      #0,-(SP)                *We want the byte at index 0
+    MOVE.W      #8,-(SP)                *And we want the whole byte
+    BSR         sub_handy_mask          *Get the value to D1
+    LEA         4(SP),SP                *Reset the stack pointer
 
-    MOVE.L  D1,-(SP)                *Put the number on the stack
-    MOVE.W  #true,-(SP)             *We want it to print the boolean
-    MOVE.W  #byte_size,-(SP)        *It will always be a byte
-    BSR     sub_build_hex_string    *Build the string
-    LEA     8(SP),SP                *Reset the stack pointer
+    MOVE.L      D1,-(SP)                *Put the number on the stack
+    MOVE.W      #true,-(SP)             *We want it to print the boolean
+    MOVE.W      #byte_size,-(SP)        *It will always be a byte
+    BSR         sub_build_hex_string    *Build the string
+    LEA         8(SP),SP                *Reset the stack pointer
 
     RTS
 
@@ -1612,65 +1665,67 @@ sub_op_movem_rts
     BSR         sub_build_char          *Go back
     LEA         2(SP),SP                *Restore the pointers
     RTS
-    
-*** EXTRA DEFINITIONS ****
 
-op_string_unlk  DC.B    'UNLK',0
-op_code_unlk    DC.W    $4E58,$FFF8,op_def_unlk,op_code_term
-op_def_unlk     DC.W    op_string_unlk,opf_no_size,opf_reg,0,ea_add_dir,opf_term
+*** extra definitions ***
 
-op_string_tst   DC.B    'TST',0
-op_code_tst     DC.W    $4A00,$FF00,op_def_tst,op_code_term
-op_ea_tst_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_tst      DC.W    op_string_tst,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_tst_dest,3,0,opf_term
+* the following definitions go beyond the required scope of the project
 
-op_string_tas   DC.B    'TAS',0
-op_code_tas     DC.W    $4AC0,$FFC0,op_def_tas,op_code_term
-op_ea_tas       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_tas      DC.W    op_string_tas,opf_size,byte_size,opf_ea,op_ea_tas,3,0,opf_term
+op_string_unlk      DC.B    'UNLK',0
+op_code_unlk        DC.W    $4E58,$FFF8,op_def_unlk,op_code_term
+op_def_unlk         DC.W    op_string_unlk,opf_no_size,opf_reg,0,ea_add_dir,opf_term
 
-op_string_swap  DC.B    'SWAP',0
-op_code_swap    DC.W    $4840,$FFF8,op_def_swap,op_code_term
-op_def_swap     DC.W    op_string_swap,opf_size,word_size,opf_reg,0,ea_reg_dir,opf_term
+op_string_tst       DC.B    'TST',0
+op_code_tst         DC.W    $4A00,$FF00,op_def_tst,op_code_term
+op_ea_tst_dest      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_tst          DC.W    op_string_tst,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_tst_dest,3,0,opf_term
 
-op_string_subi  DC.B    'SUBI',0
-op_code_subi    DC.W    $0400,$FF00,op_def_subi,op_code_term
-op_ea_subi      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_subi     DC.W    op_string_subi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_subi,3,0,opf_term
+op_string_tas       DC.B    'TAS',0
+op_code_tas         DC.W    $4AC0,$FFC0,op_def_tas,op_code_term
+op_ea_tas           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_tas          DC.W    op_string_tas,opf_size,byte_size,opf_ea,op_ea_tas,3,0,opf_term
 
-op_string_suba  DC.B    'SUBA',0
-op_code_suba    DC.W    $90C0,$F0C0,op_def_suba,op_code_term
-op_ea_suba_src  DC.B    ea_all
-op_def_suba     DC.W    op_string_suba,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_suba_src,3,0,opf_reg,9,ea_add_dir,opf_term
+op_string_swap      DC.B    'SWAP',0
+op_code_swap        DC.W    $4840,$FFF8,op_def_swap,op_code_term
+op_def_swap         DC.W    op_string_swap,opf_size,word_size,opf_reg,0,ea_reg_dir,opf_term
 
-op_string_rtr   DC.B    'RTR',0
-op_code_rtr     DC.W    $4E77,$FFFF,op_def_rtr,op_code_term
-op_def_rtr      DC.W    op_string_rtr,opf_no_size,opf_term
+op_string_subi      DC.B    'SUBI',0
+op_code_subi        DC.W    $0400,$FF00,op_def_subi,op_code_term
+op_ea_subi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_subi         DC.W    op_string_subi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_subi,3,0,opf_term
 
-op_string_pea   DC.B    'PEA',0
-op_code_pea     DC.W    $4840,$FFC0,op_def_pea,op_code_term
-op_ea_pea       DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_pea      DC.W    op_string_pea,opf_size,long_size,opf_ea,op_ea_pea,3,0,opf_term
+op_string_suba      DC.B    'SUBA',0
+op_code_suba        DC.W    $90C0,$F0C0,op_def_suba,op_code_term
+op_ea_suba_src      DC.B    ea_all
+op_def_suba         DC.W    op_string_suba,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_suba_src,3,0,opf_reg,9,ea_add_dir,opf_term
 
-op_string_not   DC.B    'NOT',0
-op_code_not     DC.W    $4600,$FF00,op_def_not,op_code_term
-op_ea_not       DC.B    ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_not      DC.W    op_string_not,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_not,3,0,opf_term
+op_string_rtr       DC.B    'RTR',0
+op_code_rtr         DC.W    $4E77,$FFFF,op_def_rtr,op_code_term
+op_def_rtr          DC.W    op_string_rtr,opf_no_size,opf_term
 
-op_string_negx  DC.B    'NEGX',0
-op_code_negx    DC.W    $4000,$FF00,op_def_negx,op_code_term
-op_ea_negx      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_negx     DC.W    op_string_negx,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_negx,3,0,opf_term
+op_string_pea       DC.B    'PEA',0
+op_code_pea         DC.W    $4840,$FFC0,op_def_pea,op_code_term
+op_ea_pea           DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_pea          DC.W    op_string_pea,opf_size,long_size,opf_ea,op_ea_pea,3,0,opf_term
 
-op_string_nbcd  DC.B    'NBCD',0
-op_code_nbcd    DC.W    $4800,$FFC0,op_def_nbcd,op_code_term
-op_ea_nbcd      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_nbcd     DC.W    op_string_nbcd,opf_size,byte_size,opf_ea,op_ea_nbcd,3,0,opf_term
+op_string_not       DC.B    'NOT',0
+op_code_not         DC.W    $4600,$FF00,op_def_not,op_code_term
+op_ea_not           DC.B    ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_not          DC.W    op_string_not,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_not,3,0,opf_term
 
-op_string_mulu  DC.B    'MULU',0
-op_code_mulu    DC.W    $C0C0,$F1C0,op_def_mulu,op_code_term
-op_ea_mulu      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
-op_def_mulu     DC.W    op_string_mulu,opf_size,word_size,opf_ea,op_ea_mulu,3,0,opf_reg,9,ea_reg_dir,opf_term
+op_string_negx      DC.B    'NEGX',0
+op_code_negx        DC.W    $4000,$FF00,op_def_negx,op_code_term
+op_ea_negx          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_negx         DC.W    op_string_negx,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_negx,3,0,opf_term
+
+op_string_nbcd      DC.B    'NBCD',0
+op_code_nbcd        DC.W    $4800,$FFC0,op_def_nbcd,op_code_term
+op_ea_nbcd          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_def_nbcd         DC.W    op_string_nbcd,opf_size,byte_size,opf_ea,op_ea_nbcd,3,0,opf_term
+
+op_string_mulu      DC.B    'MULU',0
+op_code_mulu        DC.W    $C0C0,$F1C0,op_def_mulu,op_code_term
+op_ea_mulu          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+op_def_mulu         DC.W    op_string_mulu,opf_size,word_size,opf_ea,op_ea_mulu,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_movesr    DC.B    'MOVE',0
 op_string_sr        DC.B    'SR',0
@@ -1681,7 +1736,7 @@ op_def_movesr       DC.W    op_string_movesr,opf_size,word_size,opf_string,op_st
 op_string_moveccr   DC.B    'MOVE',0
 op_string_ccr       DC.B    'CCR',0
 op_code_moveccr     DC.W    $44C0,$FFC0,op_def_moveccr,op_code_term
-op_ea_moveccr       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term 
+op_ea_moveccr       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
 op_def_moveccr      DC.W    op_string_moveccr,opf_size,word_size,opf_ea,op_ea_moveccr,3,0,opf_string,op_string_ccr,opf_term
 
 op_string_jmp       DC.B    'JMP',0
@@ -1762,32 +1817,30 @@ op_code_moveq       DC.W    $7000,$F100,op_def_moveq,op_code_term
 op_def_moveq        DC.W    op_string_moveq,opf_size,long_size,opf_sub,sub_op_moveq,opf_reg,9,ea_reg_dir,opf_term
 
 sub_op_moveq
-    MOVE.W      #0,-(SP)            *We want the byte at bit 0
-    MOVE.W      #8,-(SP)            *We want a byte
-    BSR         sub_handy_mask      *Mask the value to d1
-    LEA         4(SP),SP            *Reset the stack pointer
-    
-    MOVEM.L     D1,-(SP)            *Backup the registers
-    MOVE.W      #'#',-(SP)          *Put a pound sign on for immediate
-    BSR         sub_build_char      *Build it
-    LEA         2(SP),SP            *Reset the stack
-    MOVEM.L     (SP)+,D1            *Restore the registers
-    
-    MOVE.L      D1,-(SP)            *Put the value on the stack
-    MOVE.W      #true,-(SP)         *We want a hex sign
-    MOVE.W      #byte_size,-(SP)    *We want to print a byte
-    BSR         sub_build_hex_string    *Build it
-    LEA         8(SP),SP            *Reset the stack pointer
-    
+    MOVE.W          #0,-(SP)                *We want the byte at bit 0
+    MOVE.W          #8,-(SP)                *We want a byte
+    BSR             sub_handy_mask          *Mask the value to d1
+    LEA             4(SP),SP                *Reset the stack pointer
+
+    MOVEM.L         D1,-(SP)                *Backup the registers
+    MOVE.W          #'#',-(SP)              *Put a pound sign on for immediate
+    BSR             sub_build_char          *Build it
+    LEA             2(SP),SP                *Reset the stack
+    MOVEM.L         (SP)+,D1                *Restore the registers
+
+    MOVE.L          D1,-(SP)                *Put the value on the stack
+    MOVE.W          #true,-(SP)             *We want a hex sign
+    MOVE.W          #byte_size,-(SP)        *We want to print a byte
+    BSR             sub_build_hex_string    *Build it
+    LEA             8(SP),SP                *Reset the stack pointer
+
     RTS
 
-CR EQU $0D
-LF EQU $0A
-TAB EQU $9
-BS  EQU $8
-
-
-
+******************************************************************************************************************************************
+******************************************************************************************************************************************
+************************************************************* END OF PROGRAM *************************************************************
+******************************************************************************************************************************************
+******************************************************************************************************************************************
 
     ORG     $3000
     MOVEQ   #$44,D5
@@ -1810,24 +1863,8 @@ BS  EQU $8
     ADD     #5,D3
     ADDI    #$7B,D3
     MOVE    $12345678,D3
-    
-    END    START        ; last line of source
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    END    START
 
 
 *~Font name~Courier New~
