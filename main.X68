@@ -27,8 +27,8 @@ LOOP
     MOVE.L  current_addr,current_addr_backup    *Create a backup of the address
     MOVE.L  current_addr,A0
 
-    CMP.L   end_addr,A0                        *See if we are at the end address
-    BGE     DONE                                *If so branch to done
+    CMP.L   end_addr,A0                         *See if we are at the end address
+    BGT     DONE                                *If so branch to done
 
     CMP.B   #31,D3                              *See if we have maxed out the output
     BGE     WAIT                                *If so we'll wait for the enter key
