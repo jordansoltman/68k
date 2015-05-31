@@ -10,17 +10,20 @@
 
 START
 
-    MOVE.L  #string_enter_start,-(SP)           *Load the start address prompt to the stack
-    BSR     sub_get_input_hex                   *Get the starting address to D0
-    LEA     4(SP),SP                            *Reset the stack pointer
+*    MOVE.L  #string_enter_start,-(SP)           *Load the start address prompt to the stack
+*    BSR     sub_get_input_hex                   *Get the starting address to D0
+*    LEA     4(SP),SP                            *Reset the stack pointer
+*
+*    MOVE.L  D0,current_addr                     *Store the start as the current address
+*
+*    MOVE.L  #string_enter_stop,-(SP)            *Load the ending address to the stack
+*    BSR     sub_get_input_hex                   *Get the end address to D0
+*    LEA     4(SP),SP                            *Reset the stack pointer
+*
+*    MOVE.L  D0,end_addr                         *Store the ending address
 
-    MOVE.L  D0,current_addr                     *Store the start as the current address
-
-    MOVE.L  #string_enter_stop,-(SP)            *Load the ending address to the stack
-    BSR     sub_get_input_hex                   *Get the end address to D0
-    LEA     4(SP),SP                            *Reset the stack pointer
-
-    MOVE.L  D0,end_addr                         *Store the ending address
+    MOVE.L  #$3000,current_addr
+    MOVE.L  #$3100,end_addr
 
     MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
     MOVEQ   #11,D0                              *Move trap 11 to clear screen
@@ -287,27 +290,12 @@ sub_process_opcode_types
 
     ** code for count
 
-    MOVE.W  (A0)+,D1                        *Get the immediate count value
-
-    MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
-    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
-    BSR     sub_build_char                  *Output the pound sign
-    LEA     2(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
-
-    MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
-    MOVE.W  D1,-(SP)                        *Put the bit position in D1
-    MOVE.W  #3,-(SP)                        *set our size to 3
-    BSR     sub_handy_mask                  *Grab those values
-    LEA     4(SP),SP                        *Reset the stack pointer
-    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    MOVE.W  (A0)+,D1                        *Get the count bit position
 
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
-    MOVE.L  D1,-(SP)                        *Put the value to the stack
-    MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
-    MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
-    BSR     sub_build_hex_string            *Print out the value
-    LEA     8(SP),SP                        *Reset the stack
+    MOVE.W  D1,-(SP)
+    BSR     sub_build_count
+    LEA     2(SP),SP
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     BRA     sub_process_opcode_types_next   *Go on to the next item
@@ -345,27 +333,12 @@ sub_process_opcode_types_cnt_reg
     BTST    D1,D0                           *Check to see if it's a count (0) or register (1)
     BNE     sub_process_opcode_types_reg_qwk    *It's a register so we'll process it as such
 
-    MOVE.W  (A0)+,D1                        *Get the immediate count value
-
-    MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
-    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
-    BSR     sub_build_char                  *Output the pound sign
-    LEA     2(SP),SP                        *Reset the stack
-    MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
-
-    MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
-    MOVE.W  D1,-(SP)                        *Put the bit position in D1
-    MOVE.W  #3,-(SP)                        *set our size to 3
-    BSR     sub_handy_mask                  *Grab those values
-    LEA     4(SP),SP                        *Reset the stack pointer
-    MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+    MOVE.W  (A0)+,D1                        *Get the count bit position
 
     MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
-    MOVE.L  D1,-(SP)                        *Put the value to the stack
-    MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
-    MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
-    BSR     sub_build_hex_string            *Print out the value
-    LEA     8(SP),SP                        *Reset the stack
+    MOVE.W  D1,-(SP)
+    BSR     sub_build_count
+    LEA     2(SP),SP
     MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
 
     MOVE.W  (A0)+,D1                        *Dump a value of A0
@@ -524,6 +497,55 @@ sub_build_data
     LEA         8(SP),SP                        *Reset the pointer
 
     BSR         sub_build_finish                *Finish out the output with a terminating 0
+
+    RTS
+
+**************************************************************
+*
+* sub_build_count
+*
+* Given a bit position on the stack, and the opcode in D0, this method will go get the value of the
+* count (assumed size of 3 bits) and output it's value. Since counts of 0 mean 8, it will output
+* the correct value to the output string.
+*
+* Stack Parameters:
+* 1 (W): The bit position of the count
+*
+* Register Parameters:
+* D0 (L): The opcode to use for masking
+*
+    OFFSET  4
+sub_build_count_pos DS.W    1
+    ORG     *
+
+sub_build_count
+
+    MOVEM.L D0,-(SP)                        *Backup registers
+    MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+    BSR     sub_build_char                  *Output the pound sign
+    LEA     2(SP),SP                        *Reset the stack
+    MOVEM.L (SP)+,D0                        *Restore the registers
+
+    MOVE.W  sub_build_count_pos(SP),D1      *Get the count bit position
+
+    MOVEM.L D0,-(SP)                        *Backup the registers
+    MOVE.W  D1,-(SP)                        *Put the bit position in D1
+    MOVE.W  #3,-(SP)                        *set our size to 3
+    BSR     sub_handy_mask                  *Get the value to D1
+    LEA     4(SP),SP                        *Reset the stack pointer
+    MOVEM.L (SP)+,D0                        *Restore the registers
+
+    CMP.B   #0,D1                           *If it's equal to zero then it should actually be 8
+    BNE     sub_build_count_output          *If it's not output normally
+    MOVE.B  #8,D1                           *Set the value to 8
+
+sub_build_count_output
+
+    MOVE.L  D1,-(SP)                        *Put the value to the stack
+    MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
+    MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
+    BSR     sub_build_hex_string            *Print out the value
+    LEA     8(SP),SP                        *Reset the stack
 
     RTS
 
@@ -1404,8 +1426,8 @@ conditions_stf              DC.W    %0010,cond_hi,%0011,cond_ls,%0100,cond_cc,%0
 * All opcodes that should be checked should be in this array. The order is not important. Whenever a new opcode is defined, it should be
 * placed here so that it is processed.
 
-op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea1,op_code_movea2
-                DC.W    op_code_move1,op_code_move2,op_code_move3,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
+op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea
+                DC.W    op_code_move,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
                 DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bcc
                 DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
                 DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bclr
@@ -1418,6 +1440,11 @@ op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_cod
 
 * Each opcode below defines an opcodes operation. The definition syntax is defined in the Disassembler Documentation in the SDL section.
 
+op_ea_all           DC.B    ea_all
+op_ea_dest_std      DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_ea_no_dir_imm    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term 
+
+
 op_string_lea   DC.B    'LEA',0
 op_code_lea     DC.W    $41C0,$F1C0,op_def_lea,op_code_term
 op_ea_lea_src   DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
@@ -1425,8 +1452,7 @@ op_def_lea      DC.W    op_string_lea,opf_size,long_size,opf_ea,op_ea_lea_src,3,
 
 op_string_eor   DC.B    'EOR',0
 op_code_eor     DC.W    $B100,$F100,op_def_eor,op_code_term
-op_ea_eor_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_eor_dest,3,0,opf_term
+op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_dest_std,3,0,opf_term
 
 op_string_or    DC.B   'OR',0
 op_code_or      DC.W    $8000,$F000,op_def_or,op_code_term
@@ -1440,37 +1466,27 @@ op_def_nop      DC.W    op_string_nop,opf_term
 
 op_string_adda  DC.B    'ADDA',0
 op_code_adda    DC.W    $D0C0,$F0C0,op_def_adda,op_code_term
-op_ea_adda_src  DC.B    ea_all
-op_def_adda     DC.W    op_string_adda,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_adda_src,3,0,opf_reg,9,ea_add_dir,opf_term
+op_def_adda     DC.W    op_string_adda,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_all,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_movea DC.B    'MOVEA',0
-op_code_movea1  DC.W    $3040,$F1C0,op_def_movea,op_code_term    *Two different ways to define MOVEA
-op_code_movea2  DC.W    $2040,$F1C0,op_def_movea,op_code_term
-op_ea_movea_src DC.B    ea_all
-op_def_movea    DC.W    op_string_movea,opf_sizes,12,no_size,%11,%10,opf_ea,op_ea_movea_src,3,0,opf_reg,9,ea_add_dir,opf_term
+op_code_movea   DC.W    $2040,$E1C0,op_def_movea,op_code_term
+op_def_movea    DC.W    op_string_movea,opf_sizes,12,no_size,%11,%10,opf_ea,op_ea_all,3,0,opf_reg,9,ea_add_dir,opf_term
 
 op_string_move  DC.B    'MOVE',0
-op_code_move1   DC.W    $1000,$F000,op_def_move,op_code_term     *Three different ways to define MOVE
-op_code_move2   DC.W    $2000,$F000,op_def_move,op_code_term
-op_code_move3   DC.W    $3000,$F000,op_def_move,op_code_term
-op_ea_move_src  DC.B    ea_all
-op_ea_move_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
-op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_move_src,3,0,opf_ea,op_ea_move_dest,6,9,opf_term
+op_code_move    DC.W    $0000,$C000,op_def_move,op_code_term
+op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_all,3,0,opf_ea,op_ea_dest_std,6,9,opf_term
 
 op_string_neg   DC.B    'NEG',0
 op_code_neg     DC.W    $4400,$FF00,op_def_neg,op_code_term
-op_ea_neg_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
-op_def_neg      DC.W    op_string_neg,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_neg_dest,3,0,opf_term
+op_def_neg      DC.W    op_string_neg,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_dest_std,3,0,opf_term
 
 op_string_ori   DC.B    'ORI',0
 op_code_ori     DC.W    $0000,$FF00,op_def_ori,op_code_term
-op_ea_ori_dest  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_ori_dest,3,0,opf_term
+op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_dest_std,3,0,opf_term
 
 op_string_cmpi  DC.B    'CMPI',0
 op_code_cmpi    DC.W    $0C00,$FF00,op_def_cmpi,op_code_term
-op_ea_cmpi_dest DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_cmpi     DC.W    op_string_cmpi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_cmpi_dest,3,0,opf_term
+op_def_cmpi     DC.W    op_string_cmpi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_dest_std,3,0,opf_term
 
 op_string_rts   DC.B    'RTS',0
 op_code_rts     DC.W    $4E75,$FFFF,op_def_rts,op_code_term
@@ -1493,15 +1509,12 @@ op_def_divs     DC.W    op_string_divs,opf_size,word_size,opf_ea,op_ea_divs_src,
 
 op_string_sub   DC.B    'SUB',0
 op_code_sub     DC.W    $9000,$F000,op_def_sub,op_code_term
-op_ea_sub_src   DC.B    ea_all
-op_ea_sub_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_sub_dest,3,0,opf_reg,9,ea_reg_dir,opf_flipped
-op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_sub_dest,3,0,opf_term
+op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_cmp   DC.B    'CMP',0
 op_code_cmp     DC.W    $B000,$F100,op_def_cmp,op_code_term
-op_ea_cmp_src   DC.B    ea_all
-op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_cmp_src,3,0,opf_reg,9,ea_reg_dir,opf_term
+op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_muls  DC.B    'MULS',0
 op_code_muls    DC.W    $C1C0,$F1C0,op_def_muls,op_code_term
@@ -1510,58 +1523,50 @@ op_def_muls     DC.W    op_string_muls,opf_size,word_size,opf_ea,op_ea_muls_src,
 
 op_string_add   DC.B    'ADD',0
 op_code_add     DC.W    $D000,$F000,op_def_add,op_code_term
-op_ea_add_src   DC.B    ea_all
-op_ea_add_dest  DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
-op_def_add      DC.W    op_string_add,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_add_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped
-op_def_add_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_add_dest,3,0,opf_term
+op_def_add      DC.W    op_string_add,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+op_def_add_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_asr   DC.B    'ASR',0
 op_code_asr     DC.W    $E000,$F118,op_def_asr,op_code_term
 op_def_asr      DC.W    op_string_asr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ASR operate differently for memory ***
-op_ea_asrm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_asrm    DC.W    $E0C0,$FFC0,op_def_asrm,op_code_term
-op_def_asrm     DC.W    op_string_asr,opf_size,word_size,opf_ea,op_ea_asrm,3,0,opf_term
+op_def_asrm     DC.W    op_string_asr,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_asl   DC.B    'ASL',0
 op_code_asl     DC.W    $E100,$F118,op_def_asl,op_code_term
 op_def_asl      DC.W    op_string_asl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ASL operate differently for memory ***
-op_ea_aslm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_aslm    DC.W    $E1C0,$FFC0,op_def_aslm,op_code_term
-op_def_aslm     DC.W    op_string_asl,opf_size,word_size,opf_ea,op_ea_aslm,3,0,opf_term
+op_def_aslm     DC.W    op_string_asl,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_ror   DC.B    'ROR',0
 op_code_ror     DC.W    $E018,$F118,op_def_ror,op_code_term
 op_def_ror      DC.W    op_string_ror,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ROR operate differently for memory ***
-op_ea_rorm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_rorm    DC.W    $E6C0,$FFC0,op_def_rorm,op_code_term
-op_def_rorm     DC.W    op_string_ror,opf_size,word_size,opf_ea,op_ea_rorm,3,0,opf_term
+op_def_rorm     DC.W    op_string_ror,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_rol   DC.B    'ROL',0
 op_code_rol     DC.W    $E118,$F118,op_def_rol,op_code_term
 op_def_rol      DC.W    op_string_rol,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for ROL operate differently for memory ***
-op_ea_rolm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_rolm    DC.W    $E7C0,$FFC0,op_def_rolm,op_code_term
-op_def_rolm     DC.W    op_string_rol,opf_size,word_size,opf_ea,op_ea_rolm,3,0,opf_term
+op_def_rolm     DC.W    op_string_rol,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_lsr   DC.B    'LSR',0
 op_code_lsr     DC.W    $E008,$F118,op_def_lsr,op_code_term
 op_def_lsr      DC.W    op_string_lsr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for LSR operate differently for memory ***
-op_ea_lsrm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_lsrm    DC.W    $E2C0,$FFC0,op_def_lsrm,op_code_term
-op_def_lsrm     DC.W    op_string_lsr,opf_size,word_size,opf_ea,op_ea_lsrm,3,0,opf_term
+op_def_lsrm     DC.W    op_string_lsr,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_lsl   DC.B    'LSL',0
 op_code_lsl     DC.W    $E108,$F118,op_def_lsl,op_code_term
 op_def_lsl      DC.W    op_string_lsl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
 *** Opcodes for LSL operate differently for memory ***
-op_ea_lslm      DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_code_lslm    DC.W    $E3C0,$FFC0,op_def_lslm,op_code_term
-op_def_lslm     DC.W    op_string_lsl,opf_size,word_size,opf_ea,op_ea_lslm,3,0,opf_term
+op_def_lslm     DC.W    op_string_lsl,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 op_string_bra   DC.B    'BRA',0
 op_code_bra     DC.W    $6000,$FF00,op_def_bra,op_code_term
@@ -1576,14 +1581,13 @@ op_string_bclr  DC.B    'BCLR',0
 
 op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrL,op_def_bclrB,op_code_term
 op_ea_bclrL     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
-op_ea_bclrB     DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term     *Byte mode settings
 op_def_bclrL    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrL,3,0,opf_term
-op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrB,3,0,opf_term
+op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 * Seperate code for BCLR with immediate data
 op_code_bclr2   DC.W    $0880,$FFC0,op_def_bclrL2,op_def_bclrB2,op_code_term
 op_def_bclrL2   DC.W    op_string_bclr,opf_size,long_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrL,3,0,opf_term
-op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrB,3,0,opf_term
+op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_no_dir_imm,3,0,opf_term
 
 sub_op_bclr
     MOVE.W      #'#',-(SP)              *Push the pound sign to the stack
@@ -1709,7 +1713,7 @@ op_def_pea          DC.W    op_string_pea,opf_size,long_size,opf_ea,op_ea_pea,3,
 
 op_string_not       DC.B    'NOT',0
 op_code_not         DC.W    $4600,$FF00,op_def_not,op_code_term
-op_ea_not           DC.B    ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+op_ea_not           DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
 op_def_not          DC.W    op_string_not,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_not,3,0,opf_term
 
 op_string_negx      DC.B    'NEGX',0
@@ -1775,7 +1779,7 @@ op_def_clr          DC.W    op_string_clr,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_c
 op_string_chk       DC.B    'CHK',0
 op_code_chk         DC.W    $4100,$F140,op_def_chk,op_code_term
 op_ea_chk           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
-op_def_chk          DC.W    op_string_chk,opf_size,word_size,opf_ea,op_ea_chk,3,0,opf_reg,8,ea_reg_dir,opf_term
+op_def_chk          DC.W    op_string_chk,opf_size,word_size,opf_ea,op_ea_chk,3,0,opf_reg,9,ea_reg_dir,opf_term
 
 op_string_bsr       DC.B    'BSR',0
 op_code_bsr         DC.W    $6100,$FF00,op_def_bsr,op_code_term
@@ -1844,25 +1848,100 @@ sub_op_moveq
 
     ORG     $3000
 
-    MOVE.W  #$12345678,$87654321
+    ADDQ    #3,D0
+    ADDI    #$1234,D0
+    AND     D0,D3
+    ANDI    #$1234,D0
+    ANDI    #$12,CCR
+    BSR     $3000
+    CHK     D0,D3
+    CLR     D0
+    CMPA    #3,A0
+    CMPM    (A0)+,(A1)+
+    DIVU    #3,D3
+    EORI    #$134,D3
+    ILLEGAL
+    JMP     $4000
+    MOVE    #$33,CCR
+    MOVE    SR,D3
+    MOVEQ   #3,D0
+    MULU    #$3,D2
+    NBCD    D3
+    NEGX    D2
+    NOT     D3
+    PEA     (A0)
+    RTR
+    SF      D0
+    SVC     D0
+    SUBA    #$123,A0
+    SUBI    #$123,D0
+    SWAP    D0
+    TAS     D3
+    TST     D2
+    UNLK    A0
 
-    ANDI    #5,CCR
-    AND     #4,D5
-    ADD     #5,D3
-    ADDI    #$7B,D3
-    MOVE    $12345678,D3
-    ANDI    #5,CCR
-    AND     #4,D5
-    ADD     #5,D3
-    ADDI    #$7B,D3
-    MOVE    $12345678,D3
-    ANDI    #5,CCR
-    AND     #4,D5
-    ADD     #5,D3
-    ADDI    #$7B,D3
-    MOVE    $12345678,D3
+    ORI.W   #10,D0
+    ORI.L   #10,D0
+    ORI.B   #10,D0
+    CMPI.W  #10,D0
+    CMPI.B  #10,D0
+    CMPI.L  #10,D0
+    BCLR.L  D3, D3
+    BCLR.B  D3,(A0)
+    BCLR.B  D3,$1234
+    MOVE.W  D0,D3
+    MOVE.L  $1234,D0
+    MOVEA.W D0,A0
+    MOVEA.L D0,A0
+    NEG.L   D0
+    NOP
+    RTS
+    JSR     (A0)
+    LEA     (A0),A0
+    MOVEM.W A0/A3/A7,-(SP)
+    MOVEM.W (SP)+,A0/A3/A7
+    MOVEM.L D0/A0,-(SP)
+    MOVEM.L (SP)+,D0/A0
+    SUBQ    #8,D0
+    BRA     $3000
+    BCS     $3000
+    BVC     $3000
+    BGE     $3000
+    BLT     $3000
+    OR.W    D0,D3
+    DIVS    D3,D7
+    SUB     $1234,D5
+    CMP     $1234,D3
+    EOR.W   D0,D3
+    MULS    $23,D4
+    ADD.L     $1234,D3
+    ADD.B     D2,D3
+    ADDA.W  D0,A3
+    ASR.B     #8,D0
+    ASR.L     D0,D7
+    ASR     (A0)
+    LSR.B   #3,D0
+    LSR.L   D3,D3
+    LSR     (A0)
+    ROR.W   #3,D3
+    ROR.B   #2,D3
+    ROR     (A0)
+    ASL     #3,D0
+    ASL     D2,D7
+    ASL     (A0)
+    LSL     #3,D3
+    LSL     D0,D2
+    LSL     (A0)
+    ROL     #3,D2
+    ROR     D1,D2
+    ROR     (A0)
+ 
 
     END    START
+
+
+
+
 
 
 
