@@ -1843,6 +1843,97 @@ sub_op_moveq
 ******************************************************************************************************************************************
 ******************************************************************************************************************************************
 
+    ORG     $3000
+
+    ADDQ    #3,D0
+    ADDI    #$1234,D0
+    AND     D0,D3
+    ANDI    #$1234,D0
+    ANDI    #$12,CCR
+    BSR     $3000
+    CHK     D0,D3
+    CLR     D0
+    CMPA    #3,A0
+    CMPM    (A0)+,(A1)+
+    DIVU    #3,D3
+    EORI    #$134,D3
+    ILLEGAL
+    JMP     $4000
+    MOVE    #$33,CCR
+    MOVE    SR,D3
+    MOVEQ   #3,D0
+    MULU    #$3,D2
+    NBCD    D3
+    NEGX    D2
+    NOT     D3
+    PEA     (A0)
+    RTR
+    SF      D0
+    SVC     D0
+    SUBA    #$123,A0
+    SUBI    #$123,D0
+    SWAP    D0
+    TAS     D3
+    TST     D2
+    UNLK    A0
+
+    ORI.W   #10,D0
+    ORI.L   #10,D0
+    ORI.B   #10,D0
+    CMPI.W  #10,D0
+    CMPI.B  #10,D0
+    CMPI.L  #10,D0
+    BCLR.L  D3, D3
+    BCLR.B  D3,(A0)
+    BCLR.B  D3,$1234
+    MOVE.W  D0,D3
+    MOVE.L  $1234,D0
+    MOVEA.W D0,A0
+    MOVEA.L D0,A0
+    NEG.L   D0
+    NOP
+    RTS
+    JSR     (A0)
+    LEA     (A0),A0
+    MOVEM.W A0/A3/A7,-(SP)
+    MOVEM.W (SP)+,A0/A3/A7
+    MOVEM.L D0/A0,-(SP)
+    MOVEM.L (SP)+,D0/A0
+    SUBQ    #8,D0
+    BRA     $3000
+    BCS     $3000
+    BVC     $3000
+    BGE     $3000
+    BLT     $3000
+    OR.W    D0,D3
+    DIVS    D3,D7
+    SUB     $1234,D5
+    CMP     $1234,D3
+    EOR.W   D0,D3
+    MULS    $23,D4
+    ADD.L     $1234,D3
+    ADD.B     D2,D3
+    ADDA.W  D0,A3
+    ASR.B     #8,D0
+    ASR.L     D0,D7
+    ASR     (A0)
+    LSR.B   #3,D0
+    LSR.L   D3,D3
+    LSR     (A0)
+    ROR.W   #3,D3
+    ROR.B   #2,D3
+    ROR     (A0)
+    ASL     #3,D0
+    ASL     D2,D7
+    ASL     (A0)
+    LSL     #3,D3
+    LSL     D0,D2
+    LSL     (A0)
+    ROL     #3,D2
+    ROR     D1,D2
+    ROR     (A0)
+ 
+
     END    START
 
 
