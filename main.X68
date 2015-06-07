@@ -631,6 +631,9 @@ sub_get_input_hex_parse_output
     ADD.B   D2,D3                               *Put it onto the address
     BRA     sub_get_input_hex_parse             *Go back for the next character
 
+sub_get_input_hex_invalid_addr
+    LEA     string_invalid_address,A1           *Load the invalid address string
+    BRA     sub_get_input_hex_output_invalid
 sub_get_input_hex_invalid_size
     LEA     string_invalid_size,A1              *Load the invalid size string
     BRA     sub_get_input_hex_output_invalid    *Branch to output the string
@@ -641,6 +644,8 @@ sub_get_input_hex_output_invalid
     TRAP    #15                                 *Output the error message
     BRA     sub_get_input_hex                   *Go back to get another hex
 sub_get_input_hex_rts
+    BTST    #0,D3                               *Check if it's a word aligned address
+    BNE     sub_get_input_hex_invalid_addr      *Output the error
     MOVE.L  D3,D0                               *Return the address through D0
     RTS
 
@@ -1369,6 +1374,7 @@ hex_characters              DC.B    '0123456789ABCDEF'  *Used to build hex strin
 string_press_enter          DC.B    'Press enter to continue...',0
 string_end                  DC.B    'Reached end address. Program halted.',0
 string_invalid_size         DC.B    'Address too large!',0
+string_invalid_address      DC.B    'Address must be word aligned!',0
 string_invalid_hex          DC.B    'Not a valid hex value!',0
 string_enter_start          DC.B    'Enter a starting hex address: ',0
 string_enter_stop           DC.B    'Enter a stopping hex address: ',0
@@ -1844,6 +1850,7 @@ sub_op_moveq
 ******************************************************************************************************************************************
 
     END    START
+
 
 
 
