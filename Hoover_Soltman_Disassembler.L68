@@ -1,0 +1,2308 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.15.02
+Created On: 6/8/2015 1:06:59 PM
+
+00000000                             1  ******************************************************************************************************************************************
+00000000                             2  * Title      : 68K Disassembler
+00000000                             3  * Written by : Sam Hoover & Jordan Soltman
+00000000                             4  * Date       : May 30, 2015
+00000000                             5  * Description: When given a starting address and ending address this program will disassembler to the screen until it reaches the ending
+00000000                             6  *              address. For more details on operation see the Disassembler Documentation.
+00000000                             7  ******************************************************************************************************************************************
+00000000                             8  
+00001000                             9      ORG    $1000
+00001000                            10  
+00001000                            11  START
+00001000                            12  
+00001000  2F3C 00001A2F             13      MOVE.L  #string_enter_start,-(SP)           *Load the start address prompt to the stack
+00001006  6100 0416                 14      BSR     sub_get_input_hex                   *Get the starting address to D0
+0000100A  4FEF 0004                 15      LEA     4(SP),SP                            *Reset the stack pointer
+0000100E                            16  
+0000100E  23C0 0000193A             17      MOVE.L  D0,current_addr                     *Store the start as the current address
+00001014                            18  
+00001014  2F3C 00001A4E             19      MOVE.L  #string_enter_stop,-(SP)            *Load the ending address to the stack
+0000101A  6100 0402                 20      BSR     sub_get_input_hex                   *Get the end address to D0
+0000101E  4FEF 0004                 21      LEA     4(SP),SP                            *Reset the stack pointer
+00001022                            22  
+00001022  23C0 00001942             23      MOVE.L  D0,end_addr                         *Store the ending address
+00001028                            24  
+00001028  323C FF00                 25      MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
+0000102C  700B                      26      MOVEQ   #11,D0                              *Move trap 11 to clear screen
+0000102E  4E4F                      27      TRAP    #15                                 *Clear the screen
+00001030                            28  
+00001030  163C 0000                 29      MOVE.B  #0,D3                               *We will use D3 as a counter for line output
+00001034                            30  
+00001034                            31  LOOP
+00001034  23F9 0000193A 0000193E    32      MOVE.L  current_addr,current_addr_backup    *Create a backup of the address
+0000103E  2079 0000193A             33      MOVE.L  current_addr,A0
+00001044                            34  
+00001044  B1F9 00001942             35      CMP.L   end_addr,A0                         *See if we are at the end address
+0000104A  6E00 00BA                 36      BGT     DONE                                *If so branch to done
+0000104E                            37  
+0000104E  B63C 001F                 38      CMP.B   #31,D3                              *See if we have maxed out the output
+00001052  6C00 0090                 39      BGE     WAIT                                *If so we'll wait for the enter key
+00001056                            40  
+00001056  5203                      41      ADDQ.B  #1,D3                               *Increment the counter by one
+00001058                            42  
+00001058  4279 00001938             43      CLR.W   output_string_displacement          *Reset the string displacement so we can write again
+0000105E  4239 00001946             44      CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
+00001064                            45  
+00001064  3018                      46      MOVE.W  (A0)+,D0                            *Move the opcode (or data) to D0 for processing
+00001066  23C8 0000193A             47      MOVE.L  A0,current_addr                     *Update the current address to reflect the change
+0000106C                            48  
+0000106C  327C 1AE6                 49      MOVE.W  #op_codes,A1                        *Move the starting address for the opcodes to A1
+00001070                            50  
+00001070                            51  LOOP_OPCODES                                    *Begin to loop through the opcodes using A1
+00001070                            52  
+00001070  3459                      53      MOVEA.W (A1)+,A2
+00001072                            54  
+00001072  B5FC 00000000             55      CMP.L   #0,A2                               *Check to see if we are at the end of the opcodes list
+00001078  6700 005A                 56      BEQ     OUTPUT_DATA                         *We didn't find a matching term so we'll output data instead
+0000107C                            57  
+0000107C  341A                      58      MOVE.W  (A2)+,D2                            *Get the value
+0000107E  321A                      59      MOVE.W  (A2)+,D1                            *Get the mask
+00001080                            60  
+00001080  C240                      61      AND.W   D0,D1                               *Mask the opcode value
+00001082  B441                      62      CMP.W   D1,D2                               *See if it's a match
+00001084                            63  
+00001084  66EA                      64      BNE     LOOP_OPCODES                        *Try the next opcode
+00001086                            65  
+00001086                            66  LOOP_OPDEFS
+00001086                            67  
+00001086  365A                      68      MOVE.W  (A2)+,A3                            *Get the next opcode definition address
+00001088                            69  
+00001088  B6FC FFFF                 70      CMP.W   #op_code_term,A3                    *See if we are at the end of the opcode
+0000108C  67E2                      71      BEQ     LOOP_OPCODES                        *If so we'll continue trying other opcodes
+0000108E                            72  
+0000108E  4279 00001938             73      CLR.W   output_string_displacement          *Reset the string displacement so we can write again
+00001094  4239 00001946             74      CLR.B   invalid_op_flag                     *Clear the invalid flag for the new opcode
+0000109A  23C8 0000193A             75      MOVE.L  A0,current_addr                     *Reset the address to the current address
+000010A0                            76  
+000010A0  48E7 F0E0                 77      MOVEM.L D0-D3/A0-A2,-(SP)                   *Save D0
+000010A4  6100 043C                 78      BSR     sub_build_current_line_address      *Print out the current line address
+000010A8  4CDF 070F                 79      MOVEM.L (SP)+,D0-D3/A0-A2                   *Restore D0
+000010AC                            80  
+000010AC  48E7 F0F0                 81      MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers
+000010B0  2F0B                      82      MOVE.L  A3,-(SP)                            *Move the address of the opcode definition to the stack
+000010B2  6100 006E                 83      BSR     sub_process_opcode                  *Process the opcode
+000010B6  4FEF 0004                 84      LEA     4(SP),SP                            *Reset the stack pointer
+000010BA  4CDF 0F0F                 85      MOVEM.L (SP)+,A0-A3/D0-D3                   *Restore the registers
+000010BE                            86  
+000010BE  0C39 0000 00001946        87      CMP.B   #false,invalid_op_flag              *See if the invalid flag was set
+000010C6  6700 004C                 88      BEQ     OUTPUT                              *If it wasn't we'll go ahead and output
+000010CA                            89  
+000010CA  13FC 0000 00001946        90      MOVE.B  #false,invalid_op_flag              *Reset the stack pointer
+000010D2  60B2                      91      BRA     LOOP_OPDEFS                         *Try the next definition
+000010D4                            92  
+000010D4                            93  OUTPUT_DATA
+000010D4  48E7 F0F0                 94      MOVEM.L A0-A3/D0-D3,-(SP)                   *Backup the registers
+000010D8  6100 02B8                 95      BSR     sub_build_data                      *Build ouput [ADDR]   DATA    $[DATA]
+000010DC  4CDF 0F0F                 96      MOVEM.L (SP)+,A0-A3/D0-D3                   *Restore the registers
+000010E0  6000 0032                 97      BRA     OUTPUT                              *Go output the string
+000010E4                            98  
+000010E4                            99  WAIT
+000010E4                           100  
+000010E4  43F9 000019A7            101      LEA     string_press_enter,A1               *Load the press enter message
+000010EA  700E                     102      MOVEQ   #14,D0                              *Setup for outputing a string
+000010EC  4E4F                     103      TRAP    #15                                 *Output the string
+000010EE                           104  
+000010EE  43F9 00001947            105      LEA  input,A1                               *Point A1 at the end of the program so that any input is dumped
+000010F4                           106  
+000010F4  7002                     107      MOVEQ   #2,D0                               *Setup to input a string
+000010F6  4E4F                     108      TRAP    #15                                 *Input a string (we don't need the result)
+000010F8                           109  
+000010F8  323C FF00                110      MOVE.W  #clear_screen,D1                    *Setup D1 with the clear screen variable
+000010FC  700B                     111      MOVEQ   #11,D0                              *Move trap 11 to clear screen
+000010FE  4E4F                     112      TRAP    #15                                 *Clear the screen
+00001100                           113  
+00001100  7600                     114      MOVEQ   #0,D3                               *Reset the line counter
+00001102                           115  
+00001102  6000 FF30                116      BRA     LOOP                                *Return to our master loop
+00001106                           117  
+00001106                           118  DONE
+00001106  43F9 000019C2            119      LEA     string_end,A1                       *Load the ending message
+0000110C  700E                     120      MOVEQ   #14,D0                              *Setup for outputing a string
+0000110E  4E4F                     121      TRAP    #15                                 *Output the string
+00001110  FFFF FFFF                122      SIMHALT
+00001114                           123  
+00001114                           124  OUTPUT
+00001114  43F9 000018C0            125      LEA     output_string,A1                    *Get the output string and put it in A1
+0000111A  700D                     126      MOVEQ   #13,D0                              *Setup for output with no CR/LF
+0000111C  4E4F                     127      TRAP    #15                                 *Output
+0000111E  6000 FF14                128      BRA     LOOP                                *Return to the master loop
+00001122                           129  
+00001122                           130  
+00001122                           131  
+00001122                           132  ******************************************************************************************************************************************
+00001122                           133  ******************************************************************************************************************************************
+00001122                           134  ************************************************************** SUBROUTINES ***************************************************************
+00001122                           135  ******************************************************************************************************************************************
+00001122                           136  ******************************************************************************************************************************************
+00001122                           137  
+00001122                           138  
+00001122                           139  
+00001122                           140  **************************************************************
+00001122                           141  *
+00001122                           142  * sub_process_opcode
+00001122                           143  *
+00001122                           144  * This method processes opcode definitions and outputs the final result to the output_string global. If the
+00001122                           145  * operation code was processed and an error was found, the invalid_op_flag will be set to true. If the invalid
+00001122                           146  * opflag is set true, the opcode should not be considered valid given the definition and any output may be
+00001122                           147  * incomplete and should be discarded.
+00001122                           148  *
+00001122                           149  * For a complete discussion on how this method processes operations see the Disassembler Documentation: SDL section.
+00001122                           150  *
+00001122                           151  * Stack parameters:
+00001122                           152  * 1 (L): Address of operation definition
+00001122                           153  *
+00000004=                          154      OFFSET 4
+00000004=                          155  sub_process_opcode_addr DS.L    1
+00001122                           156      ORG *
+00001122                           157  
+00001122                           158  sub_process_opcode
+00001122  206F 0004                159      MOVEA.L sub_process_opcode_addr(SP),A0  *Load the opcode definition address
+00001126                           160  
+00001126  4281                     161      CLR.L   D1                              *Clear D1 so it can take a long address
+00001128  3218                     162      MOVE.W  (A0)+,D1                        *Get opcode name address
+0000112A                           163  
+0000112A                           164      **** Print opcode name
+0000112A  48E7 8080                165      MOVEM.L D0/A0,-(SP)                     *Backup the registers to the stack
+0000112E  2F01                     166      MOVE.L  D1,-(SP)                        *Push string name onto the stack for printing
+00001130  6100 040C                167      BSR     sub_build_string                *Build the string
+00001134  4FEF 0004                168      LEA     4(SP),SP                        *Reset the stack
+00001138  4CDF 0101                169      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+0000113C                           170  
+0000113C  3218                     171      MOVE.W  (A0)+,D1                        *Get the size type or terminating opf or cond info
+0000113E                           172  
+0000113E                           173      **** Condition operand
+0000113E  B27C 0009                174      CMP.W   #opf_cond,D1                    *See if we have a condition
+00001142  6600 0058                175      BNE     sub_process_opcode_check_size   *If not continue on
+00001146                           176  
+00001146  3218                     177      MOVE.W  (A0)+,D1                        *Get the condition bit location
+00001148                           178  
+00001148  48E7 8080                179      MOVEM.L D0/A0,-(SP)                     *Backup the registers
+0000114C  3F01                     180      MOVE.W  D1,-(SP)                        *Put the bit position in D1
+0000114E  3F3C 0004                181      MOVE.W  #4,-(SP)                        *set our size to 4 for the condition code
+00001152  6100 0748                182      BSR     sub_handy_mask                  *Grab the condition to D1
+00001156  4FEF 0004                183      LEA     4(SP),SP                        *Reset the stack pointer
+0000115A  4CDF 0101                184      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+0000115E                           185  
+0000115E  3418                     186      MOVE.W  (A0)+,D2                        *Get the boolean to determine if we should include true and false
+00001160  B47C 0000                187      CMP.W   #false,D2                       *Check if it's false
+00001164  6700 000C                188      BEQ     sub_process_opcode_skip_tf      *If it is we'll skip tf
+00001168                           189  
+00001168  227C 00001AA4            190      MOVEA.L #conditions,A1                  *Otherwise load all the conditions
+0000116E                           191  
+0000116E  6000 0008                192      BRA     sub_process_opcode_check_cond   *Jump to check the condition
+00001172                           193  
+00001172                           194  sub_process_opcode_skip_tf
+00001172                           195  
+00001172  227C 00001AAC            196      MOVEA.L #conditions_stf,A1              *Load the conditions without true and false
+00001178                           197  
+00001178                           198  sub_process_opcode_check_cond
+00001178                           199  
+00001178  3419                     200      MOVE.W  (A1)+,D2                        *Store the condition code to D2
+0000117A  B47C FFFF                201      CMP.W   #cond_term,D2                   *See if it's the
+0000117E  6700 0204                202      BEQ     sub_process_opcode_rts_invalid  *It must be an invalid condition type because we've run out of options
+00001182                           203  
+00001182  3619                     204      MOVE.W  (A1)+,D3                        *Get the address of the condition string
+00001184                           205  
+00001184  B242                     206      CMP.W   D2,D1                           *see if the current condition is the right one
+00001186  66F0                     207      BNE     sub_process_opcode_check_cond   *Go back through the loop
+00001188                           208  
+00001188  48E7 8080                209      MOVEM.L D0/A0,-(SP)                     *Backup the registers
+0000118C  2F03                     210      MOVE.L  D3,-(SP)                        *Put the string address on the stack
+0000118E  6100 03AE                211      BSR     sub_build_string                *Build the condition code
+00001192  4FEF 0004                212      LEA     4(SP),SP                        *Reset the stack pointer
+00001196  4CDF 0101                213      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+0000119A                           214  
+0000119A  3218                     215      MOVE.W  (A0)+,D1                        *Get the next token to hanle size or opf_term
+0000119C                           216  
+0000119C                           217  sub_process_opcode_check_size
+0000119C                           218  
+0000119C  B27C 0010                219      CMP.W   #opf_term,D1                    *See if we have terminated
+000011A0  6700 01EA                220      BEQ     sub_process_opcode_rts          *We are done with this code so we'll return
+000011A4                           221  
+000011A4  B27C 000F                222      CMP.W   #opf_no_size,D1                 *See if it doens't have a size
+000011A8  6700 003E                223      BEQ     sub_process_opcode_tab          *If it doesn't skip ahead
+000011AC                           224  
+000011AC  B27C 000E                225      CMP.W   #opf_size,D1                    *See if it is a size
+000011B0  6600 0008                226      BNE     sub_process_opcode_opf_sizes    *Must support different sizes (not a single size)
+000011B4                           227  
+000011B4  3E18                     228      MOVE.W  (A0)+,D7                        *Store the size in D7
+000011B6  6000 0030                229      BRA     sub_process_opcode_tab          *Skip to outputing a tab
+000011BA                           230  
+000011BA                           231  sub_process_opcode_opf_sizes
+000011BA                           232  
+000011BA  3418                     233      MOVE.W  (A0)+,D2                        *Get the size bit position
+000011BC  3618                     234      MOVE.W  (A0)+,D3                        *Get the byte size format
+000011BE  3818                     235      MOVE.W  (A0)+,D4                        *Get the word size format
+000011C0  3A18                     236      MOVE.W  (A0)+,D5                        *Get the long size format
+000011C2                           237  
+000011C2  48E7 8080                238      MOVEM.L D0/A0,-(SP)                     *Save the registers
+000011C6                           239  
+000011C6  3F02                     240      MOVE.W  D2,-(SP)                        *Put the size on the stack
+000011C8  3F03                     241      MOVE.W  D3,-(SP)                        *Put the byte size info on the stack
+000011CA  3F04                     242      MOVE.W  D4,-(SP)                        *Put the word size info on the stack
+000011CC  3F05                     243      MOVE.W  D5,-(SP)                        *Put the long size info on the stack
+000011CE                           244  
+000011CE  6100 0558                245      BSR     sub_check_build_op              *Build the size operand
+000011D2  4FEF 0008                246      LEA     8(SP),SP                        *Reset the stack pointer
+000011D6  4CDF 0101                247      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+000011DA                           248  
+000011DA  3E01                     249      MOVE.W  D1,D7                           *Save the size to D7
+000011DC                           250  
+000011DC  0C39 0001 00001946       251      CMP.B   #true,invalid_op_flag           *See if the size was invalid
+000011E4  6700 01A6                252      BEQ     sub_process_opcode_rts          *Branch to end if so
+000011E8                           253  
+000011E8                           254  sub_process_opcode_tab
+000011E8                           255  
+000011E8  48E7 8180                256      MOVEM.L D0/D7/A0,-(SP)                  *Save the registers
+000011EC  6100 067E                257      BSR     sub_tab                         *Output out the tab
+000011F0  4CDF 0181                258      MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+000011F4                           259  
+000011F4  3218                     260      MOVE.W  (A0)+,D1                        *Move next keyword to D1
+000011F6                           261  
+000011F6  B27C 0010                262      CMP.W   #opf_term,D1                    *See if this code is done
+000011FA  6700 0190                263      BEQ     sub_process_opcode_rts          *If so we are done
+000011FE                           264  
+000011FE  B27C 000B                265      CMP.W   #opf_flip,D1                    *See if the flip bit is set
+00001202  6600 0014                266      BNE     sub_process_opcode_back_types   *If not we'll skip to types
+00001206                           267  
+00001206  3218                     268      MOVE.W  (A0)+,D1                        *Get the determinate bit position
+00001208  0300                     269      BTST    D1,D0                           *Test to see if the flip bit is set
+0000120A  6700 0010                270      BEQ     sub_process_opcode_types
+0000120E                           271  
+0000120E                           272  sub_process_opcode_flip_loop
+0000120E  0C58 000C                273      CMP.W   #opf_flipped,(A0)+              *Get next bit and increment by one
+00001212  6700 0008                274      BEQ     sub_process_opcode_types        *We are back processing opcodes
+00001216  60F6                     275      BRA     sub_process_opcode_flip_loop    *If we are at the opf_flipped bit we are done and ready to output
+00001218                           276  
+00001218                           277  sub_process_opcode_back_types
+00001218                           278  
+00001218  41E8 FFFE                279      LEA     -2(A0),A0                       *Backup by one
+0000121C                           280  
+0000121C                           281  sub_process_opcode_types
+0000121C                           282  
+0000121C  3218                     283      MOVE.W  (A0)+,D1                        *Get the next keyword
+0000121E                           284  
+0000121E  B27C 0001                285      CMP.W   #opf_count,D1                   *See if we are passing in a count
+00001222  6600 001A                286      BNE     sub_process_opcode_types_reg    *If not equal we'll see if its a register
+00001226                           287  
+00001226                           288      ** code for count
+00001226                           289  
+00001226  3218                     290      MOVE.W  (A0)+,D1                        *Get the count bit position
+00001228                           291  
+00001228  48E7 8180                292      MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
+0000122C  3F01                     293      MOVE.W  D1,-(SP)
+0000122E  6100 01A0                294      BSR     sub_build_count
+00001232  4FEF 0002                295      LEA     2(SP),SP
+00001236  4CDF 0181                296      MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+0000123A                           297  
+0000123A  6000 0126                298      BRA     sub_process_opcode_types_next   *Go on to the next item
+0000123E                           299  
+0000123E                           300  sub_process_opcode_types_reg
+0000123E                           301  
+0000123E  B27C 0002                302      CMP.W   #opf_reg,D1                         *See if its a register field
+00001242  6600 001E                303      BNE     sub_process_opcode_types_cnt_reg   *If not check if it's a count/register field
+00001246                           304  
+00001246                           305      ** code for reg
+00001246                           306  
+00001246                           307  sub_process_opcode_types_reg_qwk            *Quick access to reg
+00001246                           308  
+00001246  3218                     309      MOVE.W  (A0)+,D1                        *Get starting bit position
+00001248  3418                     310      MOVE.W  (A0)+,D2                        *Get register mode
+0000124A                           311  
+0000124A  48E7 8180                312      MOVEM.L D0/D7/A0,-(SP)                  *Backup the registers
+0000124E                           313  
+0000124E  3F02                     314      MOVE.W  D2,-(SP)                        *Push mode bit position onto the stack
+00001250  3F01                     315      MOVE.W  D1,-(SP)                        *Push register bit position onto the stack
+00001252  6100 046E                316      BSR     sub_build_direct_string         *Build the address or data register
+00001256  4FEF 0004                317      LEA     4(SP),SP                        *Reset the stack pointer
+0000125A                           318  
+0000125A  4CDF 0181                319      MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+0000125E                           320  
+0000125E  6000 0102                321      BRA     sub_process_opcode_types_next   *Go to the next statement
+00001262                           322  
+00001262                           323  sub_process_opcode_types_cnt_reg
+00001262                           324  
+00001262  B27C 0004                325      CMP.W   #opf_count_reg,D1               *See if it the count reg
+00001266  6600 0022                326      BNE     sub_process_opcode_types_imm    *If not check immediate
+0000126A                           327  
+0000126A  3218                     328      MOVE.W  (A0)+,D1                        *Get determinate to figure out if it's a count or register
+0000126C                           329  
+0000126C  0300                     330      BTST    D1,D0                           *Check to see if it's a count (0) or register (1)
+0000126E  66D6                     331      BNE     sub_process_opcode_types_reg_qwk    *It's a register so we'll process it as such
+00001270                           332  
+00001270  3218                     333      MOVE.W  (A0)+,D1                        *Get the count bit position
+00001272                           334  
+00001272  48E7 8180                335      MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
+00001276  3F01                     336      MOVE.W  D1,-(SP)
+00001278  6100 0156                337      BSR     sub_build_count
+0000127C  4FEF 0002                338      LEA     2(SP),SP
+00001280  4CDF 0181                339      MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+00001284                           340  
+00001284  3218                     341      MOVE.W  (A0)+,D1                        *Dump a value of A0
+00001286                           342  
+00001286  6000 00DA                343      BRA     sub_process_opcode_types_next
+0000128A                           344  
+0000128A                           345  sub_process_opcode_types_imm
+0000128A                           346  
+0000128A  B27C 0005                347      CMP.W   #opf_imm,D1                     *See if it the count reg
+0000128E  6600 0044                348      BNE     sub_process_opcode_types_ea     *If not must be an ea mode
+00001292                           349  
+00001292  48E7 C180                350      MOVEM.L D0/D1/D7/A0,-(SP)               *Backup registers
+00001296  3F3C 0023                351      MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+0000129A  6100 0276                352      BSR     sub_build_char                  *Output the pound sign
+0000129E  4FEF 0002                353      LEA     2(SP),SP                        *Reset the stack
+000012A2  4CDF 0183                354      MOVEM.L (SP)+,D0/D1/D7/A0               *Restore the registers
+000012A6                           355  
+000012A6  48E7 8180                356      MOVEM.L D0/D7/A0,-(SP)                  *Backup registers
+000012AA  3F07                     357      MOVE.W  D7,-(SP)                        *Push the size onto the stack
+000012AC  6100 03F2                358      BSR     sub_get_next_abs                *Get the value (will be returned in D1)
+000012B0  4FEF 0002                359      LEA     2(SP),SP                        *Reset the stack
+000012B4  4CDF 0181                360      MOVEM.L (SP)+,D0/D7/A0                  *Restore the registers
+000012B8                           361  
+000012B8  48E7 8180                362      MOVEM.L A0/D0/D7,-(SP)                  * save current address on the stack
+000012BC  2F01                     363      MOVE.L  D1,-(SP)                        * move value (word or long) to stack
+000012BE  3F3C 0001                364      MOVE.W  #true,-(SP)                     * Always true becuase we always want to print the $ symbol
+000012C2  3F07                     365      MOVE.W  D7,-(SP)                        * move size to the stack
+000012C4  6100 02A0                366      BSR     sub_build_hex_string            * call sub_build_hex_string
+000012C8  4FEF 0008                367      LEA     8(SP),SP                        * reset the stack
+000012CC  4CDF 0181                368      MOVEM.L (SP)+,A0/D0/D7                  * reload A0 with current address
+000012D0                           369  
+000012D0  6000 0090                370      BRA     sub_process_opcode_types_next
+000012D4                           371  
+000012D4                           372  sub_process_opcode_types_ea
+000012D4                           373  
+000012D4  B27C 0000                374      CMP.W   #opf_ea,D1                      *Check if it's an EA
+000012D8  6600 0026                375      BNE     sub_process_opcode_types_disp   *If not go to disp
+000012DC                           376  
+000012DC  4281                     377      CLR.L   D1                              *Clear D1 to get address
+000012DE  3218                     378      MOVE.W  (A0)+,D1                        *Get the address of acceptable EA modes
+000012E0  3418                     379      MOVE.W  (A0)+,D2                        *Mode start bit position
+000012E2  3618                     380      MOVE.W  (A0)+,D3                        *Reg start bit position
+000012E4                           381  
+000012E4  48E7 8180                382      MOVEM.L A0/D0/D7,-(SP)                  *Backup the registers
+000012E8                           383  
+000012E8  2F01                     384      MOVE.L  D1,-(SP)                        *Pass valid address modes address
+000012EA  3F02                     385      MOVE.W  D2,-(SP)                        *Pass mode starting bit position
+000012EC  3F03                     386      MOVE.W  D3,-(SP)                        *Register starting bit position
+000012EE  3F07                     387      MOVE.W  D7,-(SP)                        *Calling operand size
+000012F0  6100 04B2                388      BSR     sub_check_ea_string             *Output EA
+000012F4  4FEF 000A                389      LEA     10(SP),SP                       *Reset the pointer
+000012F8                           390  
+000012F8  4CDF 0181                391      MOVEM.L (SP)+,A0/D0/D7                  *Reset the pointer
+000012FC                           392  
+000012FC  6000 0064                393      BRA     sub_process_opcode_types_next
+00001300                           394  
+00001300                           395  sub_process_opcode_types_disp
+00001300                           396  
+00001300  B27C 0006                397      CMP.W   #opf_disp,D1                    *See if it's a displacement
+00001304  6600 0030                398      BNE     sub_process_opcode_types_sub    *If it's not we'll check if it's a subroutine
+00001308                           399  
+00001308  48E7 8080                400      MOVEM.L D0/A0,-(SP)                     *Backup the registers
+0000130C  3F3C 0000                401      MOVE.W  #0,-(SP)                        *Displacement is assumed to start at bit 0
+00001310  3F3C 0008                402      MOVE.W  #8,-(SP)                        *Get 8 bits
+00001314  6100 0586                403      BSR     sub_handy_mask                  *Mask the values
+00001318  4FEF 0004                404      LEA     4(SP),SP                        *Reset the stack pointer
+0000131C  4CDF 0101                405      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+00001320                           406  
+00001320  48E7 8080                407      MOVEM.L D0/A0,-(SP)                     *Backup the registers
+00001324  3F01                     408      MOVE.W  D1,-(SP)                        *Move the displacement to the stack
+00001326  6100 03C0                409      BSR     sub_build_displacement          *Build the displacement string
+0000132A  4FEF 0002                410      LEA     2(SP),SP                        *Reset the stack pointer
+0000132E  4CDF 0101                411      MOVEM.L (SP)+,D0/A0                     *Restore the registers
+00001332                           412  
+00001332  6000 002E                413      BRA     sub_process_opcode_types_next   *Check for the next room
+00001336                           414  
+00001336                           415  
+00001336                           416  sub_process_opcode_types_sub
+00001336                           417  
+00001336  B27C 0007                418      CMP.W   #opf_sub,D1                     *See if it's a subroutine
+0000133A  6600 0012                419      BNE     sub_process_opcode_types_string *If not go to string
+0000133E                           420  
+0000133E  3258                     421      MOVE.W  (A0)+,A1                        *Get the address of the subroutine
+00001340                           422  
+00001340  48E7 C180                423      MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
+00001344  4E91                     424      JSR     (A1)                            *Call the custom subroutine
+00001346  4CDF 0183                425      MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
+0000134A                           426  
+0000134A  6000 0016                427      BRA     sub_process_opcode_types_next   *Go to next
+0000134E                           428  
+0000134E                           429  sub_process_opcode_types_string
+0000134E                           430  
+0000134E  3258                     431      MOVE.W  (A0)+,A1                        *Get the address of the string
+00001350                           432  
+00001350  48E7 C180                433      MOVEM.L D1/D0/D7/A0,-(SP)               *Backup the registers
+00001354  2F09                     434      MOVE.L  A1,-(SP)                        *Put the string address on the stack
+00001356  6100 01E6                435      BSR     sub_build_string                *Build the string
+0000135A  4FEF 0004                436      LEA     4(SP),SP                        *Reset the stack pointer
+0000135E  4CDF 0183                437      MOVEM.L (SP)+,D1/D0/D7/A0               *Restore the registers
+00001362                           438  
+00001362                           439  sub_process_opcode_types_next
+00001362                           440  
+00001362  3218                     441      MOVE.W  (A0)+,D1                        *Get the next statement
+00001364                           442  
+00001364  B27C 0010                443      CMP.W   #opf_term,D1                    *See if this code is done
+00001368  6700 0022                444      BEQ     sub_process_opcode_rts          *If so we are done
+0000136C                           445  
+0000136C  B27C 000C                446      CMP.W   #opf_flipped,D1                 *See if it's the flipped
+00001370  6700 001A                447      BEQ     sub_process_opcode_rts          *If so we are done
+00001374                           448  
+00001374  48E7 8180                449      MOVEM.L A0/D0/D7,-(SP)                  *Backup the registers
+00001378  6100 04CC                450      BSR     sub_build_string_comma_space    *Build a comma and then a space because there must be another field
+0000137C  4CDF 0181                451      MOVEM.L (SP)+,A0/D0/D7                  *Restore the registers
+00001380                           452  
+00001380  6000 FE96                453      BRA     sub_process_opcode_back_types   *Go back and get start again
+00001384                           454  
+00001384                           455  sub_process_opcode_rts_invalid
+00001384                           456  
+00001384  13FC 0001 00001946       457      MOVE.B  #true,invalid_op_flag           *Set the invalid op flag to true
+0000138C                           458  
+0000138C                           459  sub_process_opcode_rts
+0000138C  6100 0140                460      BSR     sub_build_finish                *Put the terminating character on the string
+00001390  4E75                     461      RTS
+00001392                           462  
+00001392                           463  **************************************************************
+00001392                           464  *
+00001392                           465  * sub_build_data
+00001392                           466  *
+00001392                           467  * Build data looks to the current address to print out first the address, then 'DATA', and then
+00001392                           468  * the data (of word size) at that address in hex form. This method will increment the current_address
+00001392                           469  * counter by word_size.
+00001392                           470  *
+00001392                           471  * This method accepts no arguments and has no returns.
+00001392                           472  *
+00001392                           473  
+00001392                           474  sub_build_data
+00001392                           475  
+00001392  4279 00001938            476      CLR.W       output_string_displacement      *Reset the string displacement so we can write again
+00001398                           477  
+00001398  6100 0148                478      BSR         sub_build_current_line_address  *Print out the current line
+0000139C                           479  
+0000139C  2F3C 00001A6D            480      MOVE.L      #string_data,-(SP)              *Load the position of 'DATA' to the stack
+000013A2  6100 019A                481      BSR         sub_build_string                *Output DATA
+000013A6  4FEF 0004                482      LEA         4(SP),SP                        *Reset the stack pointer
+000013AA                           483  
+000013AA  6100 04C0                484      BSR         sub_tab                         *Output it
+000013AE                           485  
+000013AE  2079 0000193E            486      MOVE.L      current_addr_backup,A0          *Get the backup address and put it in A0
+000013B4  4280                     487      CLR.L       D0                              *Clear D0
+000013B6  3010                     488      MOVE.W      (A0),D0                         *Load the value at A0 (the word) to D0
+000013B8                           489  
+000013B8  2F00                     490      MOVE.L      D0,-(SP)                        *Move the value to the stack
+000013BA  3F3C 0001                491      MOVE.W      #true,-(SP)                     *We want to print a hex symbol so #true
+000013BE  3F3C 0002                492      MOVE.W      #word_size,-(SP)                *Ops are always of word size
+000013C2  6100 01A2                493      BSR         sub_build_hex_string            *Build the string
+000013C6  4FEF 0008                494      LEA         8(SP),SP                        *Reset the pointer
+000013CA                           495  
+000013CA  6100 0102                496      BSR         sub_build_finish                *Finish out the output with a terminating 0
+000013CE                           497  
+000013CE  4E75                     498      RTS
+000013D0                           499  
+000013D0                           500  **************************************************************
+000013D0                           501  *
+000013D0                           502  * sub_build_count
+000013D0                           503  *
+000013D0                           504  * Given a bit position on the stack, and the opcode in D0, this method will go get the value of the
+000013D0                           505  * count (assumed size of 3 bits) and output it's value. Since counts of 0 mean 8, it will output
+000013D0                           506  * the correct value to the output string.
+000013D0                           507  *
+000013D0                           508  * Stack Parameters:
+000013D0                           509  * 1 (W): The bit position of the count
+000013D0                           510  *
+000013D0                           511  * Register Parameters:
+000013D0                           512  * D0 (L): The opcode to use for masking
+000013D0                           513  *
+00000004=                          514      OFFSET  4
+00000004=                          515  sub_build_count_pos DS.W    1
+000013D0                           516      ORG     *
+000013D0                           517  
+000013D0                           518  sub_build_count
+000013D0                           519  
+000013D0  48E7 8000                520      MOVEM.L D0,-(SP)                        *Backup registers
+000013D4  3F3C 0023                521      MOVE.W  #'#',-(SP)                      *Move pound sign to the stack
+000013D8  6100 0138                522      BSR     sub_build_char                  *Output the pound sign
+000013DC  4FEF 0002                523      LEA     2(SP),SP                        *Reset the stack
+000013E0  4CDF 0001                524      MOVEM.L (SP)+,D0                        *Restore the registers
+000013E4                           525  
+000013E4  322F 0004                526      MOVE.W  sub_build_count_pos(SP),D1      *Get the count bit position
+000013E8                           527  
+000013E8  48E7 8000                528      MOVEM.L D0,-(SP)                        *Backup the registers
+000013EC  3F01                     529      MOVE.W  D1,-(SP)                        *Put the bit position in D1
+000013EE  3F3C 0003                530      MOVE.W  #3,-(SP)                        *set our size to 3
+000013F2  6100 04A8                531      BSR     sub_handy_mask                  *Get the value to D1
+000013F6  4FEF 0004                532      LEA     4(SP),SP                        *Reset the stack pointer
+000013FA  4CDF 0001                533      MOVEM.L (SP)+,D0                        *Restore the registers
+000013FE                           534  
+000013FE  B23C 0000                535      CMP.B   #0,D1                           *If it's equal to zero then it should actually be 8
+00001402  6600 0006                536      BNE     sub_build_count_output          *If it's not output normally
+00001406  123C 0008                537      MOVE.B  #8,D1                           *Set the value to 8
+0000140A                           538  
+0000140A                           539  sub_build_count_output
+0000140A                           540  
+0000140A  2F01                     541      MOVE.L  D1,-(SP)                        *Put the value to the stack
+0000140C  3F3C 0000                542      MOVE.W  #false,-(SP)                    *Don't print the hex char because we are going to be <= 8
+00001410  3F3C 0000                543      MOVE.W  #nibble_size,-(SP)              *Print it out as a nibble
+00001414  6100 0150                544      BSR     sub_build_hex_string            *Print out the value
+00001418  4FEF 0008                545      LEA     8(SP),SP                        *Reset the stack
+0000141C                           546  
+0000141C  4E75                     547      RTS
+0000141E                           548  
+0000141E                           549  **************************************************************
+0000141E                           550  *
+0000141E                           551  * sub_get_input_hex
+0000141E                           552  *
+0000141E                           553  * This method will first output the string passed on the stack as a prompt, then will process the entered value
+0000141E                           554  * as a hex. If there are invalid characters, it is empty, or it is larger than 8 characters (leading zeros not included)
+0000141E                           555  * the method will prompt again until a valid address is entered. The return value (through D0) is garaunteed to be
+0000141E                           556  * a valid number between $00000000 and $FFFFFFFF
+0000141E                           557  *
+0000141E                           558  * Stack Parameters:
+0000141E                           559  * 1 (L): The address null terminated byte string to be output as a prompt
+0000141E                           560  *
+0000141E                           561  * Return Registers:
+0000141E                           562  * D0 (L): The processed hex value
+0000141E                           563  *
+00000004=                          564      OFFSET  4
+00000004=                          565  sub_get_input_hex_prompt  DS.L  1
+0000141E                           566      ORG *
+0000141E                           567  
+0000141E                           568  sub_get_input_hex
+0000141E                           569  
+0000141E  700E                     570      MOVE.L  #14,D0                              *Setup for string output
+00001420  226F 0004                571      MOVEA.L sub_get_input_hex_prompt(SP),A1     *Load the prompt
+00001424  4E4F                     572      TRAP    #15                                 *Output the prompt
+00001426                           573  
+00001426  7002                     574      MOVE.L  #2,D0                               *Setup for keyboard input
+00001428  43F9 00001947            575      LEA     input,A1                            *Load the ending address to store the input string
+0000142E  4E4F                     576      TRAP    #15                                 *Get the input string and the size to D1.W
+00001430                           577  
+00001430  B27C 0000                578      CMP.W   #0,D1                               *See if no string was entered
+00001434  6700 0080                579      BEQ     sub_get_input_hex_invalid_hex       *If so it's invalid
+00001438                           580  
+00001438  4283                     581      CLR.L   D3                                  *D3 will be for output
+0000143A                           582  
+0000143A                           583  sub_get_input_hex_lead_zeros
+0000143A                           584  
+0000143A  1411                     585      MOVE.B  (A1),D2                             *Get the first byte
+0000143C  B43C 0030                586      CMP.B   #$30,D2                             *See if it's 0
+00001440  6600 0012                587      BNE     sub_get_input_hex_check_size        *If not we'll go on to check the hex string size
+00001444                           588  
+00001444  B27C 0000                589      CMP.W   #0,D1                               *See if we have run out of characters
+00001448  6700 007A                590      BEQ     sub_get_input_hex_rts               *If so the hex must be 0x0
+0000144C                           591  
+0000144C  5341                     592      SUBQ.W  #1,D1                               *If so, subtract one from the total size
+0000144E  43E9 0001                593      LEA     1(A1),A1                            *Move our address up by one
+00001452                           594  
+00001452  60E6                     595      BRA     sub_get_input_hex_lead_zeros        *Loop back to check the next 0
+00001454                           596  
+00001454                           597  sub_get_input_hex_check_size
+00001454                           598  
+00001454  B27C 0008                599      CMP.W   #8,D1                               *See if our size is greater than 8
+00001458  6E00 0052                600      BGT     sub_get_input_hex_invalid_size      *If we have more than 8 characters it's too big
+0000145C                           601  
+0000145C                           602  sub_get_input_hex_parse
+0000145C                           603  
+0000145C  B27C 0000                604      CMP.W   #0,D1                               *See if we are out of characers
+00001460  6700 0062                605      BEQ     sub_get_input_hex_rts               *If so we'll return
+00001464  5341                     606      SUBQ    #1,D1                               *Otherwise subtract one from the size as a counter
+00001466                           607  
+00001466  1419                     608      MOVE.B  (A1)+,D2                            *Get the next character
+00001468                           609  
+00001468  B43C 0061                610      CMP.B   #$61,D2                             *See if it's greater than $61 (lowercase letters)
+0000146C  6D00 000A                611      BLT     sub_get_input_hex_parse_uc          *If not check undercase letters
+00001470  0402 0057                612      SUB.B   #$57,D2                             *Subtract $57 so it'll be in the range A to infinity
+00001474  6000 001E                613      BRA     sub_get_input_hex_parse_output      *Continue to the output
+00001478                           614  
+00001478                           615  sub_get_input_hex_parse_uc
+00001478  B43C 0041                616      CMP.B   #$41,D2                             *See if it's greater than $41 (uppercase letters)
+0000147C  6D00 000A                617      BLT     sub_get_input_hex_parse_num         *If it's less than we'll check numbers 0-9
+00001480  0402 0037                618      SUB.B   #$37,D2                             *Subtract $47 so it'll be in the range a...A
+00001484  6000 000E                619      BRA     sub_get_input_hex_parse_output      *Contine to the output
+00001488                           620  
+00001488                           621  sub_get_input_hex_parse_num
+00001488  B43C 0030                622      CMP.B   #$30,D2                             *Compare against the numeric range
+0000148C  6D00 0028                623      BLT     sub_get_input_hex_invalid_hex       *If it's less, it must be an invalid character
+00001490  0402 0030                624      SUB.B   #$30,D2                             *Otherwise subract 30 to get in the range 0-a
+00001494                           625  
+00001494                           626  sub_get_input_hex_parse_output
+00001494                           627  
+00001494  B43C 000F                628      CMP.B   #15,D2                              *See if it's greater than 15 (f)
+00001498  6E00 001C                629      BGT     sub_get_input_hex_invalid_hex       *If so it's invalid
+0000149C  E98B                     630      LSL.L   #4,D3                               *Make room for the characer
+0000149E  D602                     631      ADD.B   D2,D3                               *Put it onto the address
+000014A0  60BA                     632      BRA     sub_get_input_hex_parse             *Go back for the next character
+000014A2                           633  
+000014A2                           634  sub_get_input_hex_invalid_addr
+000014A2  43F9 000019FA            635      LEA     string_invalid_address,A1           *Load the invalid address string
+000014A8  6000 0012                636      BRA     sub_get_input_hex_output_invalid
+000014AC                           637  sub_get_input_hex_invalid_size
+000014AC  43F9 000019E7            638      LEA     string_invalid_size,A1              *Load the invalid size string
+000014B2  6000 0008                639      BRA     sub_get_input_hex_output_invalid    *Branch to output the string
+000014B6                           640  sub_get_input_hex_invalid_hex
+000014B6  43F9 00001A18            641      LEA     string_invalid_hex,A1               *Load the invalid hex string
+000014BC                           642  sub_get_input_hex_output_invalid
+000014BC  700D                     643      MOVE.L  #13,D0                              *Setup for string output
+000014BE  4E4F                     644      TRAP    #15                                 *Output the error message
+000014C0  6000 FF5C                645      BRA     sub_get_input_hex                   *Go back to get another hex
+000014C4                           646  sub_get_input_hex_rts
+000014C4  0803 0000                647      BTST    #0,D3                               *Check if it's a word aligned address
+000014C8  66D8                     648      BNE     sub_get_input_hex_invalid_addr      *Output the error
+000014CA  2003                     649      MOVE.L  D3,D0                               *Return the address through D0
+000014CC  4E75                     650      RTS
+000014CE                           651  
+000014CE                           652  **************************************************************
+000014CE                           653  *
+000014CE                           654  * sub_build_finish
+000014CE                           655  *
+000014CE                           656  * This method outputs a null byte to the end of the global output_string so that it can be processed for output
+000014CE                           657  * by an output method. After calling this method any output to the output_string will be ignored.
+000014CE                           658  *
+000014CE                           659  * This method accepts no arguments and has no return value.
+000014CE                           660  *
+000014CE                           661  sub_build_finish
+000014CE  207C 000018C0            662      MOVEA.L     #output_string,A0               *Load the output string
+000014D4  3039 00001938            663      MOVE.W      output_string_displacement,D0   *Load current displacement to D0
+000014DA  D0C0                     664      ADD.W       D0,A0                           *Adjust the address for the current displacement
+000014DC  10BC 0000                665      MOVE.B      #null,(A0)
+000014E0  4E75                     666      RTS
+000014E2                           667  
+000014E2                           668  **************************************************************
+000014E2                           669  *
+000014E2                           670  * sub_build_current_line_address
+000014E2                           671  *
+000014E2                           672  * This method uses the current_addr_backup and outputs that value to output_string as a word if it's less than
+000014E2                           673  * $FFFF and as a long if it's greater than $FFFF.
+000014E2                           674  *
+000014E2                           675  * This method accepts no arguments and has no return value.
+000014E2                           676  *
+000014E2                           677  sub_build_current_line_address
+000014E2  2239 0000193E            678      MOVE.L      current_addr_backup,D1          *Get the address
+000014E8  2F01                     679      MOVE.L      D1,-(SP)                        *Put the address on the stack
+000014EA  3F3C 0000                680      MOVE.W      #false,-(SP)                    *We don't want to output a hex symbol for the address
+000014EE  B2BC 0000FFFF            681      CMP.L       #$FFFF,D1                       *Compare against the max address of a word
+000014F4  6E00 000A                682      BGT         sub_build_current_line_long     *Use a long size
+000014F8  3F3C 0002                683      MOVE.W      #word_size,-(SP)                *Otherwise we can represent with a word
+000014FC  6000 0006                684      BRA         sub_build_current_line_build
+00001500                           685  sub_build_current_line_long
+00001500  3F3C 0004                686      MOVE.W      #long_size,-(SP)                *Make it a long
+00001504                           687  sub_build_current_line_build
+00001504  6100 0060                688      BSR         sub_build_hex_string            *Build the string
+00001508  4FEF 0008                689      LEA         8(SP),SP                        *Reset the stack pointer
+0000150C                           690  
+0000150C  6100 035E                691      BSR         sub_tab                         *Tab forward
+00001510                           692  
+00001510  4E75                     693      RTS
+00001512                           694  
+00001512                           695  **************************************************************
+00001512                           696  *
+00001512                           697  * sub_build_char
+00001512                           698  *
+00001512                           699  * This method takes a single ascii character as a byte on the stack and outputs it to the output_string.
+00001512                           700  * If a backspace character is output, the output_string_displacement will be decreased by one, essentially
+00001512                           701  * erasing a single character from the end of the string.
+00001512                           702  *
+00001512                           703  * Stack Parameters:
+00001512                           704  * 1 (W) : the ascii character that should be output to the output_string
+00001512                           705  *
+00000004=                          706      OFFSET 4
+00000004=                          707  sub_build_char_ascii DS.W    1
+00001512                           708      ORG *
+00001512                           709  
+00001512                           710  sub_build_char
+00001512  207C 000018C0            711      MOVEA.L     #output_string,A0               *Load the output string
+00001518  3039 00001938            712      MOVE.W      output_string_displacement,D0   *Load current displacement to D0
+0000151E  D0C0                     713      ADD.W       D0,A0                           *Adjust the address for the current displacement
+00001520  322F 0004                714      MOVE.W      sub_build_char_ascii(SP),D1
+00001524                           715  
+00001524  B27C 0008                716      CMP.W       #BS,D1                          *See if it's a backspace
+00001528  6600 0008                717      BNE         sub_build_char_output           *If not output the char
+0000152C  5340                     718      SUBQ        #byte_size,D0                   *Otherwise subtract one from our displacement
+0000152E  6000 0006                719      BRA         sub_build_char_rts              *And RTS
+00001532                           720  sub_build_char_output
+00001532  10C1                     721      MOVE.B      D1,(A0)+                        *Move the character on
+00001534  5240                     722      ADDQ.W      #byte_size,D0                   *Increase by one
+00001536                           723  sub_build_char_rts
+00001536  33C0 00001938            724      MOVE.W      D0,output_string_displacement   *Save the displacement back to the global variable
+0000153C  4E75                     725      RTS
+0000153E                           726  
+0000153E                           727  **************************************************************
+0000153E                           728  *
+0000153E                           729  * sub_build_string
+0000153E                           730  *
+0000153E                           731  * This method will output the null terminated byte string at the given address to output_string.
+0000153E                           732  * This method has no return value.
+0000153E                           733  *
+0000153E                           734  * Parameters:
+0000153E                           735  * 1 (L): 0 terminated string address to add onto string
+0000153E                           736  *
+0000153E                           737  sub_build_string
+0000153E  207C 000018C0            738      MOVEA.L     #output_string,A0
+00001544  3039 00001938            739      MOVE.W      output_string_displacement,D0   *Load current displacement to D0
+0000154A  D0C0                     740      ADD.W       D0,A0                           *Adjust the address for the current displacement
+0000154C  226F 0004                741      MOVE.L      long_size(SP),A1                *Grab the address to print from
+00001550                           742  sub_build_string_loop
+00001550  0C11 0000                743      CMP.B       #0,(A1)                         *See if we are at the end of the string
+00001554  6700 0008                744      BEQ         sub_build_string_rts            *If so we'll exit
+00001558  10D9                     745      MOVE.B      (A1)+,(A0)+                     *Move the source char to the destination
+0000155A  5240                     746      ADDQ.W      #byte_size,D0                   *increment the displacement
+0000155C  60F2                     747      BRA         sub_build_string_loop           *Go back and see if we are done copying
+0000155E                           748  sub_build_string_rts
+0000155E  33C0 00001938            749      MOVE.W      D0,output_string_displacement
+00001564  4E75                     750      RTS
+00001566                           751  
+00001566                           752  **************************************************************
+00001566                           753  *
+00001566                           754  * sub_build_hex_string
+00001566                           755  *
+00001566                           756  * This method takes a value to convert to hex, a boolean to indicate if a '$' symbol should be printed preceeding
+00001566                           757  * the value, and a size (byte_size, word_size, or long_size) to indicate the size to print. The value of the
+00001566                           758  * hex is output to output_string. This method does not return anything.
+00001566                           759  *
+00001566                           760  * Stack Parameters
+00001566                           761  * 1 (L): Value that should be converted to hex and added to string
+00001566                           762  * 2 (W): Boolean IN (true, false) that determines if it should print the $ symbol in front
+00001566                           763  * 3 (W): Size IN (byte_size, word_size, long_size) that determines what size to print as
+00001566                           764  
+00000004=                          765      OFFSET 4
+00000004=                          766  sub_build_hex_string_size        DS.W    1
+00000006=                          767  sub_build_hex_string_hex_flag    DS.W    1
+00000008=                          768  sub_build_hex_string_value       DS.L    1
+00001566                           769      ORG *
+00001566                           770  
+00001566                           771  sub_build_hex_string
+00001566  207C 000018C0            772      MOVEA.L     #output_string,A0                       *Load the output string
+0000156C  227C 00001997            773      MOVEA.L     #hex_characters,A1                      *Load the hex characters
+00001572  3039 00001938            774      MOVE.W      output_string_displacement,D0           *Load current displacement to D0
+00001578  D0C0                     775      ADD.W       D0,A0                                   *Adjust the address for the current displacement
+0000157A  322F 0004                776      MOVE.W      sub_build_hex_string_size(SP),D1        *Get the size and save it in D1
+0000157E  E349                     777      LSL.W       #1,D1                                   *Multiply by 2 because we defined bytes not digits
+00001580  B27C 0000                778      CMP.W       #nibble_size,D1                         *See if it's a nibble (represented by 0)
+00001584  6600 0004                779      BNE         sub_build_hex_string_con                *If it's not skip the next step
+00001588  7201                     780      MOVEQ       #1,D1                                   *Move a 1 on to represent a nibble
+0000158A                           781  sub_build_hex_string_con
+0000158A  3801                     782      MOVE.W      D1,D4                                   *Copy the size for later
+0000158C  342F 0006                783      MOVE.W      sub_build_hex_string_hex_flag(SP),D2    *Get immediate boolean and save in D2
+00001590  262F 0008                784      MOVE.L      sub_build_hex_string_value(SP),D3       *Get the value and save in D3
+00001594  B43C 0000                785      CMP.B       #false,D2                               *See if we are printing a $ symbol
+00001598  6700 0008                786      BEQ         sub_build_hex_string_move_ptr           *Skip printing the hex sign if immediate is set false
+0000159C                           787  sub_build_hex_string_hex
+0000159C  10FC 0024                788      MOVE.B      #'$',(A0)+                              *Add in the $ symbol for hex
+000015A0  5240                     789      ADDQ.W      #byte_size,D0                           *Add one to displacement counter
+000015A2                           790  sub_build_hex_string_move_ptr
+000015A2  D0C1                     791      ADDA.W      D1,A0                                   *increment the pointer by the number size
+000015A4                           792  sub_build_hex_string_loop
+000015A4  B27C 0000                793      CMP.W       #0,D1                                   *See if we are done
+000015A8  6700 0012                794      BEQ         sub_build_hex_string_rts                *Exit the subroutine
+000015AC  5341                     795      SUBQ.W      #1,D1                                   *Decrease our counter by one
+000015AE  3A03                     796      MOVE.W      D3,D5                                   *Move the byte from D3 to D5
+000015B0  CA7C 000F                797      AND.W       #right_nibble_mask,D5                   *Mask the last nibble in D5
+000015B4  1131 5000                798      MOVE.B      (0,A1,D5.W),-(A0)                       *Add remainder to output string
+000015B8  E883                     799      ASR.L       #4,D3                                   *Shift our hex value right by two
+000015BA  60E8                     800      BRA         sub_build_hex_string_loop               *Loop
+000015BC                           801  sub_build_hex_string_rts
+000015BC  D044                     802      ADD.W       D4,D0                                   *Add our total displacement
+000015BE  33C0 00001938            803      MOVE.W      D0,output_string_displacement           *Update the displacement
+000015C4  4E75                     804      RTS
+000015C6                           805  
+000015C6                           806  **************************************************************
+000015C6                           807  *
+000015C6                           808  * sub_build_ea_string
+000015C6                           809  *
+000015C6                           810  * This method takes an addressing mode as defined by one of the ea_modes_, a register number, and
+000015C6                           811  * a size (used in absolute modes). This method will output to the output_string the correct addressing mode
+000015C6                           812  * string as defined by the parameters. This method has no return.
+000015C6                           813  *
+000015C6                           814  * Stack Parameters:
+000015C6                           815  * 1 (W): Mode in defined ea_modes_[X]
+000015C6                           816  * 2 (W): Register number 0-7
+000015C6                           817  * 3 (W): (For Immediate) Size can be passed in as byte_size, word_size, or long_size NOTE: no_size if not immediate
+000015C6                           818  
+00000004=                          819      OFFSET 4
+00000004=                          820  sub_build_ea_string_size        DS.W    1
+00000006=                          821  sub_build_ea_string_register    DS.W    1
+00000008=                          822  sub_build_ea_string_mode        DS.W    1
+000015C6                           823      ORG *
+000015C6                           824  
+000015C6                           825  sub_build_ea_string
+000015C6  322F 0008                826      MOVE.W      sub_build_ea_string_mode(SP),D1     *Load mode to D1
+000015CA  342F 0006                827      MOVE.W      sub_build_ea_string_register(SP),D2 *Load register to D2
+000015CE  362F 0004                828      MOVE.W      sub_build_ea_string_size(SP),D3     *Load size to D3
+000015D2  B27C 0007                829      CMP.W       #ea_abs,D1                          *See if the current mode is abs addressing
+000015D6  6600 0052                830      BNE         sub_build_ea_string_reg             *If not it's a register
+000015DA                           831  
+000015DA                           832      *Deals with the immediate/absolute cases
+000015DA                           833  
+000015DA  B47C 0004                834      CMP.W       #ea_imm,D2                          *See if it's an immediate value
+000015DE  6700 0012                835      BEQ         sub_build_ea_string_immediate       *If so go to print that
+000015E2  B47C 0000                836      CMP.W       #ea_word,D2                         *Otherwise we are printing an address, check if a word
+000015E6  6600 0022                837      BNE         sub_build_ea_string_addr_long       *If not word it must be a long address
+000015EA  363C 0002                838      MOVE.W      #word_size,D3                       *Setup for word_size printing
+000015EE  6000 001E                839      BRA         sub_build_ea_string_abs_print       *Branch to print address
+000015F2                           840  sub_build_ea_string_immediate
+000015F2  48E7 1000                841      MOVEM.L     D3,-(SP)                            *Backup D3
+000015F6  3F3C 0023                842      MOVE.W      #'#',-(SP)                          *Push the immedate symbol onto the stack
+000015FA  6100 FF16                843      BSR         sub_build_char                      *Print it
+000015FE  4FEF 0002                844      LEA         2(SP),SP                            *Reset the stack
+00001602  4CDF 0008                845      MOVEM.L     (SP)+,D3                            *Restore D3
+00001606  6000 0006                846      BRA         sub_build_ea_string_abs_print       *Move on to print
+0000160A                           847  sub_build_ea_string_addr_long
+0000160A  363C 0004                848      MOVE.W      #long_size,D3                       *Setup for long_size printing
+0000160E                           849  sub_build_ea_string_abs_print
+0000160E  3F03                     850      MOVE.W      D3,-(SP)                            *Push the size onto the stack
+00001610  6100 008E                851      BSR         sub_get_next_abs                    *Get the next word/long to D1
+00001614  4FEF 0002                852      LEA         2(SP),SP                            *Reset the stack
+00001618  2F01                     853      MOVE.L      D1,-(SP)                            * move value (word or long) to stack
+0000161A  3F3C 0001                854      MOVE.W      #true,-(SP)                         * Always true becuase we always want to print the $ symbol
+0000161E  3F03                     855      MOVE.W      D3,-(SP)                            * move size to the stack
+00001620  6100 FF44                856      BSR         sub_build_hex_string                * call sub_build_hex_string
+00001624  4FEF 0008                857      LEA         8(SP),SP                            * reset the stack
+00001628  4E75                     858      RTS
+0000162A                           859  
+0000162A                           860      *Deals with the register cases
+0000162A                           861  
+0000162A                           862  sub_build_ea_string_reg
+0000162A  207C 000018C0            863      MOVEA.L     #output_string,A0                   *Load the output string
+00001630  227C 00001997            864      MOVEA.L     #hex_characters,A1                  *Load the hex characters
+00001636  3039 00001938            865      MOVE.W      output_string_displacement,D0       *Load current displacement to D0
+0000163C  D0C0                     866      ADD.W       D0,A0                               *Adjust the address for the current displacement
+0000163E  B27C 0004                867      CMP.W       #ea_ari_pre,D1                      *Check if ARI with predecrement
+00001642  6600 0008                868      BNE         sub_build_ea_string_open_paren      *If not go to next step
+00001646  10FC 002D                869      MOVE.B      #'-',(A0)+            *Output minus sign
+0000164A  5240                     870      ADDQ.W      #1,D0                               *Increase the displacement by one
+0000164C                           871  sub_build_ea_string_open_paren
+0000164C  B27C 0002                872      CMP.W       #ea_ari,D1                          *Check against modes that need open paren
+00001650  6D00 000C                873      BLT         sub_build_ea_string_reg_type        *If DN or AN skip parens
+00001654  10FC 0028                874      MOVE.B      #'(',(A0)+       *Otherwise add an opening paren
+00001658  5240                     875      ADDQ.W      #1,D0                               *Increment displacement
+0000165A  6000 0014                876      BRA         sub_build_ea_string_reg_type_a      *Branch to A output (must be because only addresses have paren)
+0000165E                           877  sub_build_ea_string_reg_type
+0000165E  B27C 0000                878      CMP.W       #ea_reg_dir,D1                      *Check if this is a register (DN)
+00001662  6600 000C                879      BNE         sub_build_ea_string_reg_type_a      *If not branch to print out an A instead
+00001666  10FC 0044                880      MOVE.B      #'D',(A0)+                *Add 'D' to string
+0000166A  5240                     881      ADDQ.W      #1,D0                               *Increase the displacement by one
+0000166C  6000 0008                882      BRA         sub_build_ea_string_reg_num         *Branch to adding address number
+00001670                           883  sub_build_ea_string_reg_type_a
+00001670  10FC 0041                884      MOVE.B      #'A',(A0)+                *Add 'A' to string
+00001674  5240                     885      ADDQ.W      #1,D0                               *Increase the displacement by one
+00001676                           886  sub_build_ea_string_reg_num
+00001676  10F1 2000                887      MOVE.B      (0,A1,D2.W),(A0)+                   *Move our number into the string via the hex_string const
+0000167A  5240                     888      ADDQ.W      #1,D0                               *Increase the displacement by one
+0000167C  B27C 0002                889      CMP.W       #ea_ari,D1                          *See if we need an close paren
+00001680  6D00 0016                890      BLT         sub_build_ea_string_rts             *If we don't we are done
+00001684  10FC 0029                891      MOVE.B      #')',(A0)+      *Add the closing paren
+00001688  5240                     892      ADDQ.W      #1,D0                               *Increase the displacement by one
+0000168A  B27C 0003                893      CMP.W       #ea_ari_post,D1                     *Check if we need a plus sign
+0000168E  6600 0008                894      BNE         sub_build_ea_string_rts             *If not we are done
+00001692  10FC 002B                895      MOVE.B      #'+',(A0)+             *Add plus sign to string
+00001696  5240                     896      ADDQ.W      #1,D0                               *Increase the displacement by one
+00001698                           897  sub_build_ea_string_rts
+00001698  33C0 00001938            898      MOVE.W      D0,output_string_displacement       *Update the displacement for the string
+0000169E  4E75                     899      RTS
+000016A0                           900  
+000016A0                           901  **************************************************************
+000016A0                           902  *
+000016A0                           903  * sub_get_next_abs
+000016A0                           904  *
+000016A0                           905  * This method will get the next value from the current_addr and returns it via D1. The size
+000016A0                           906  * (either word_size or long_size) should be passed on the stack.
+000016A0                           907  *
+000016A0                           908  * Stack Parameters:
+000016A0                           909  * 1 (W): Size defined by either word_size or long_size
+000016A0                           910  *
+000016A0                           911  * Return Registers:
+000016A0                           912  * D1 (W/L): The word or long value
+000016A0                           913  
+00000004=                          914      OFFSET 4
+00000004=                          915  sub_get_next_abs_size    DS.W    1
+000016A0                           916      ORG *
+000016A0                           917  
+000016A0                           918  sub_get_next_abs
+000016A0  322F 0004                919      MOVE.W  sub_get_next_abs_size(SP),D1                * load size to D1
+000016A4  2079 0000193A            920      MOVEA.L current_addr,A0                             * load current address to A0
+000016AA                           921  
+000016AA  B27C 0004                922      CMP.W   #long_size,D1                               * compare size to long
+000016AE  6700 0008                923      BEQ     sub_get_next_abs_long                       * if it's a long advance
+000016B2  3218                     924      MOVE.W  (A0)+,D1                                    * get next word
+000016B4  6000 0004                925      BRA     sub_get_next_abs_adj                        * branch to return
+000016B8                           926  sub_get_next_abs_long
+000016B8  2218                     927      MOVE.L  (A0)+,D1                                    * get next long
+000016BA                           928  sub_get_next_abs_adj
+000016BA  23C8 0000193A            929      MOVE.L  A0,current_addr                             * update the current address
+000016C0  4E75                     930      RTS
+000016C2                           931  
+000016C2                           932  **************************************************************
+000016C2                           933  *
+000016C2                           934  * sub_build_direct_string
+000016C2                           935  *
+000016C2                           936  * This method is a convience method to output an address or data register to the output_string
+000016C2                           937  * with a number found in the opcode. The first stack parameter should be the ea mode that will
+000016C2                           938  * be used (NOTE: cannot be ea_abs) and the second parameter should be the starting bit position
+000016C2                           939  * where the number can be found in the opcode. D0 should have the opcode string in it.
+000016C2                           940  *
+000016C2                           941  * Stack Parameters:
+000016C2                           942  * 1 (W): Mode in defined ea_reg_dir or ea_add_dir
+000016C2                           943  * 2 (W): Starting bit location within D0
+000016C2                           944  *
+000016C2                           945  * Register Parameters:
+000016C2                           946  * 1 (L): D0 should contain the current op code
+000016C2                           947  *
+000016C2                           948  
+00000004=                          949      OFFSET 4
+00000004=                          950  sub_build_direct_string_start    DS.W   1
+00000006=                          951  sub_build_direct_string_ea       DS.W   1
+000016C2                           952      ORG *
+000016C2                           953  
+000016C2                           954  sub_build_direct_string
+000016C2  322F 0004                955      MOVE.W  sub_build_direct_string_start(SP),D1    *Get the starting position
+000016C6                           956  
+000016C6  3F01                     957      MOVE.W  D1,-(SP)                                *Give handy mask the starting position
+000016C8  3F3C 0003                958      MOVE.W  #3,-(SP)                                *And give handy mask the size
+000016CC  6100 01CE                959      BSR     sub_handy_mask                          *Branch to handy mask
+000016D0  4FEF 0004                960      LEA     4(SP),SP                                *Reset the stack pointer
+000016D4                           961  
+000016D4  3F2F 0006                962      MOVE.W  sub_build_direct_string_ea(SP),-(SP)    *Give the mode
+000016D8  3F01                     963      MOVE.W  D1,-(SP)                                *Give the register number
+000016DA  3F3C 0000                964      MOVE.W  #null,-(SP)                             *Push an empty value for size
+000016DE  6100 FEE6                965      BSR     sub_build_ea_string                     *Build the string
+000016E2  4FEF 0006                966      LEA     6(SP),SP                                *Reset the stack pointer
+000016E6                           967  
+000016E6  4E75                     968      RTS
+000016E8                           969  
+000016E8                           970  **************************************************************
+000016E8                           971  *
+000016E8                           972  * sub_build_displacement
+000016E8                           973  *
+000016E8                           974  * This method takes a displacement offset, adds the value to the current address, and outputs it to
+000016E8                           975  * the output_string. If the displacement value is #word_displace the next value word is taken
+000016E8                           976  * and used to calculate the displacement address. This method returns nothing.
+000016E8                           977  *
+000016E8                           978  * Stack Parameters:
+000016E8                           979  * 1 (W): Displacement offset
+000016E8                           980  *
+00000004=                          981      OFFSET 4
+00000004=                          982  sub_build_displacement_offset    DS.W   1
+000016E8                           983      ORG *
+000016E8                           984  
+000016E8                           985  sub_build_displacement
+000016E8  2E39 0000193A            986      MOVE.L   current_addr,D7                        *Add our displacement to the address
+000016EE  4281                     987      CLR.L   D1                                      *Clear out D1
+000016F0  302F 0004                988      MOVE.W  sub_build_displacement_offset(SP),D0    *Get the displacement and put in D0
+000016F4  B07C 0000                989      CMP.W   #word_displace,D0                       *See if it's a word displacement
+000016F8  6600 0012                990      BNE     sub_build_displacement_byte             *If it's not a word it's a byte
+000016FC                           991  
+000016FC  3F3C 0002                992      MOVE.W  #word_size,-(SP)                        *Put word size onto the stack
+00001700  619E                     993      BSR     sub_get_next_abs                        *Get the next word or long to D1
+00001702  4FEF 0002                994      LEA     2(SP),SP                                *Reset the stack pointer
+00001706  48C1                     995      EXT.L   D1                                      *Extend to a long
+00001708  6000 0008                996      BRA     sub_build_displacement_output
+0000170C                           997  sub_build_displacement_byte
+0000170C  1200                     998      MOVE.B  D0,D1                                   *Move byte to D0
+0000170E  4881                     999      EXT.W   D1                                      *Extend to a word
+00001710  48C1                    1000      EXT.L   D1                                      *Then to a long
+00001712                          1001  sub_build_displacement_output
+00001712  D287                    1002      ADD.L   D7,D1
+00001714  2F01                    1003      MOVE.L  D1,-(SP)                                *Put the value on the stack
+00001716  3F3C 0000               1004      MOVE.W  #false,-(SP)                            *Don't print the hex symbol
+0000171A  3F3C 0002               1005      MOVE.W  #word_size,-(SP)                        *Print the address as a word
+0000171E  6100 FE46               1006      BSR     sub_build_hex_string
+00001722  4FEF 0008               1007      LEA     8(SP),SP                                *Reset the stack
+00001726  4E75                    1008      RTS
+00001728                          1009  
+00001728                          1010  **************************************************************
+00001728                          1011  *
+00001728                          1012  * sub_check_build_op
+00001728                          1013  *
+00001728                          1014  * This routine first grabs the 2 bits at the position specified in 'Bit position'. It then checks
+00001728                          1015  * to see if each bit couple matches the provided definitions in 'Byte value', 'Word value', and
+00001728                          1016  * 'Long value'. If it matches one of those it prints out the resulting character ('B', 'W', or 'L')
+00001728                          1017  * and returns the size (byte_size, word_size, long_size) via D1. If it does not match any of the
+00001728                          1018  * provided patterns, then it is considered to be invalid and the invalid_op_flag is set true and
+00001728                          1019  * the method will return.
+00001728                          1020  *
+00001728                          1021  * Stack Parameters:
+00001728                          1022  * 1 (W): Bit position for size
+00001728                          1023  * 2 (W): Byte value
+00001728                          1024  * 3 (W): Word value
+00001728                          1025  * 4 (W): Long value
+00001728                          1026  *
+00001728                          1027  * The vaules should be specified as sets of two bits, e.g. %00 for byte %01 for word and %11 for long
+00001728                          1028  *
+00001728                          1029  * Register Parameters:
+00001728                          1030  * 1 (L): D0 should contain the current op code that will be parsed
+00001728                          1031  *
+00001728                          1032  * Return
+00001728                          1033  * 1 (W): Size of the operation as byte_size, word_size, or long_size
+00001728                          1034  
+00000004=                         1035      OFFSET 4
+00000004=                         1036  sub_check_build_op_long_val    DS.W    1
+00000006=                         1037  sub_check_build_op_word_val    DS.W    1
+00000008=                         1038  sub_check_build_op_byte_val    DS.W    1
+0000000A=                         1039  sub_check_build_op_position    DS.W    1
+00001728                          1040      ORG *
+00001728                          1041  
+00001728                          1042  sub_check_build_op
+00001728                          1043  
+00001728  322F 000A               1044      MOVE.W  sub_check_build_op_position(SP),D1          *Put the bit position in D1
+0000172C                          1045  
+0000172C  3F01                    1046      MOVE.W  D1,-(SP)                                    *Push bit position onto the stack
+0000172E  3F3C 0002               1047      MOVE.W  #2,-(SP)                                    *Size is determined by 2 bits so we'll put 2 on the stack
+00001732  6100 0168               1048      BSR     sub_handy_mask                              *Get the 2 bits at that bit position to D1
+00001736  4FEF 0004               1049      LEA     4(SP),SP                                    *Reset the stack pointer
+0000173A                          1050  
+0000173A  48E7 4000               1051      MOVEM.L D1,-(SP)                                    *Backup the value
+0000173E  3F3C 002E               1052      MOVE.W  #'.',-(SP)                                  *Push a period onto the stack
+00001742  6100 FDCE               1053      BSR     sub_build_char                              *Put the period on the output string
+00001746  4FEF 0002               1054      LEA     2(SP),SP                                    *Reset the stack pointer
+0000174A  4CDF 0002               1055      MOVEM.L (SP)+,D1                                    *Restore D1
+0000174E                          1056  
+0000174E  3A2F 0008               1057      MOVE.W  sub_check_build_op_byte_val(SP),D5          *Get the byte value
+00001752  3C2F 0006               1058      MOVE.W  sub_check_build_op_word_val(SP),D6          *Get the word value
+00001756  3E2F 0004               1059      MOVE.W  sub_check_build_op_long_val(SP),D7          *Get the long value
+0000175A                          1060  
+0000175A  B205                    1061      CMP.B   D5,D1                                       *See if the byte value matches the bit value
+0000175C  6600 000E               1062      BNE     sub_check_build_op_word                     *If not we'll see if it's a word
+00001760  163C 0042               1063      MOVE.B  #'B',D3                                     *If it is we'll put 'B' in D3 for printing
+00001764  383C 0001               1064      MOVE.W  #byte_size,D4                               *Set our size as byte size
+00001768  6000 0022               1065      BRA     sub_check_build_op_print                    *Branch to print out
+0000176C                          1066  sub_check_build_op_word
+0000176C  B206                    1067      CMP.B   D6,D1                                       *See if we match the word definition
+0000176E  6600 000E               1068      BNE     sub_check_build_op_long                     *If not we'll check long
+00001772  163C 0057               1069      MOVE.B  #'W',D3                                     *If so we'll put a 'W' in D3 for printing later
+00001776  383C 0002               1070      MOVE.W  #word_size,D4                               *Set our size to word size
+0000177A  6000 0010               1071      BRA     sub_check_build_op_print                    *Go print it
+0000177E                          1072  sub_check_build_op_long
+0000177E  B207                    1073      CMP.B   D7,D1                                       *See if it is a word size
+00001780  6600 0018               1074      BNE     sub_check_build_op_flag_invalid             *If not, then it is an invalid size
+00001784  163C 004C               1075      MOVE.B  #'L',D3                                     *If so we'll push an 'L' to D3 for printing
+00001788  383C 0004               1076      MOVE.W  #long_size,D4                               *Put long_size in D4
+0000178C                          1077  sub_check_build_op_print
+0000178C  3F03                    1078      MOVE.W  D3,-(SP)                                    *Push the character (stored in D3) onto the stack
+0000178E  6100 FD82               1079      BSR     sub_build_char                              *Build the char to the output string
+00001792  4FEF 0002               1080      LEA     2(SP),SP                                    *Reset the stack pointer
+00001796                          1081  sub_check_build_op_rts
+00001796  3204                    1082      MOVE.W  D4,D1                                       *Move the size into D1 for returning
+00001798  4E75                    1083      RTS
+0000179A                          1084  sub_check_build_op_flag_invalid
+0000179A  13FC 0001 00001946      1085      MOVE.B  #true,invalid_op_flag                       *Set the invalid op flag to true since the size was invalid
+000017A2  60F2                    1086      BRA     sub_check_build_op_rts                      *Branch to the return
+000017A4                          1087  
+000017A4                          1088  
+000017A4                          1089  
+000017A4                          1090  **************************************************************
+000017A4                          1091  *
+000017A4                          1092  * sub_check_ea_string
+000017A4                          1093  *
+000017A4                          1094  * This method takes an address to the valid modes, a starting bit location for the mode, a starting bit location
+000017A4                          1095  * for the register, and the size of the calling operand on the stack. This method will first verify that the current
+000017A4                          1096  * addressing mode is included in the list of available modes. If it is, the value is taken and the EA mode is output
+000017A4                          1097  * to the output string. If there is an error due to an invalid mode, the invalid_op_flag will be set true and the
+000017A4                          1098  * method will return. The value of the output_string may be incorrect and should be discarded.
+000017A4                          1099  *
+000017A4                          1100  * Stack Parameters:
+000017A4                          1101  * 1 (L): Address of valid modes
+000017A4                          1102  * 2 (W): Mode starting bit location within D0
+000017A4                          1103  * 3 (W): Register starting bit location within D0
+000017A4                          1104  * 4 (W): Calling operand size IN (byte_size, word_size, long_size)
+000017A4                          1105  *
+000017A4                          1106  * Register Parameters:
+000017A4                          1107  * 1 (L): D0 should contain the current op code
+000017A4                          1108  *
+00000004=                         1109      OFFSET 4
+00000004=                         1110  sub_check_ea_string_size    DS.W    1
+00000006=                         1111  sub_check_ea_string_reg     DS.W    1
+00000008=                         1112  sub_check_ea_string_mode    DS.W    1
+0000000A=                         1113  sub_check_ea_string_add     DS.L    1
+000017A4                          1114      ORG *
+000017A4                          1115  
+000017A4                          1116  sub_check_ea_string
+000017A4                          1117  
+000017A4  342F 0008               1118      MOVE.W  sub_check_ea_string_mode(SP),D2     *Move the bit position of the mode to D2
+000017A8  362F 0006               1119      MOVE.W  sub_check_ea_string_reg(SP),D3      *Move the bit position of the reg to D3
+000017AC  3A2F 0004               1120      MOVE.W  sub_check_ea_string_size(SP),D5     *Move the size onto D5
+000017B0                          1121  
+000017B0  B47C 0001               1122      CMP.W   #ea_add_dir,D2                      *See if we are in address direct mode
+000017B4  6600 000E               1123      BNE     sub_check_ea_string_get_vals        *If not continue on
+000017B8  BA7C 0001               1124      CMP.W   #byte_size,D5                       *See if it's a byte size
+000017BC  6600 0006               1125      BNE     sub_check_ea_string_get_vals        *If not continue on
+000017C0                          1126  
+000017C0  6000 007A               1127      BRA     sub_check_ea_string_not_found       *Address direct cannot be used with bytes
+000017C4                          1128  
+000017C4                          1129  sub_check_ea_string_get_vals
+000017C4                          1130  
+000017C4  48E7 1400               1131      MOVEM.L D3/D5,-(SP)                         *Backup D3 (reg bit pos) and A2
+000017C8  3F02                    1132      MOVE.W  D2,-(SP)                            *Push mode bit position onto stack
+000017CA  3F3C 0003               1133      MOVE.W  #3,-(SP)                            *Push the mode size (always 3) onto the stack
+000017CE  6100 00CC               1134      BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+000017D2  4FEF 0004               1135      LEA     4(SP),SP                            *Restore the stack
+000017D6  4CDF 0028               1136      MOVEM.L (SP)+,D3/D5                         *Restore D3 and A2
+000017DA                          1137  
+000017DA  3401                    1138      MOVE.W  D1,D2                               *Move the mode value to D2
+000017DC                          1139  
+000017DC  48E7 2400               1140      MOVEM.L D2/D5,-(SP)                         *Backup the mode value (D2)
+000017E0  3F03                    1141      MOVE.W  D3,-(SP)                            *Push the reg bit position onto stack
+000017E2  3F3C 0003               1142      MOVE.W  #3,-(SP)                            *Push the reg size (always 3) onto the stack
+000017E6  6100 00B4               1143      BSR     sub_handy_mask                      *Call handy mask to get the value to D1
+000017EA  4FEF 0004               1144      LEA     4(SP),SP                            *Restore the stack
+000017EE  4CDF 0024               1145      MOVEM.L (SP)+,D2/D5                         *Restore D2 and A2
+000017F2                          1146  
+000017F2  3601                    1147      MOVE.W  D1,D3                               *Move the reg value back to D3
+000017F4                          1148  
+000017F4  246F 000A               1149      MOVEA.L sub_check_ea_string_add(SP),A2      *Move the starting address mode value to A2
+000017F8                          1150  
+000017F8                          1151  sub_check_ea_string_loop
+000017F8  121A                    1152      MOVE.B  (A2)+,D1                            *Grab the next ea_mode and store in D1
+000017FA  B23C 000E               1153      CMP.B   #ea_all,D1                          *Check if it accepts all modes
+000017FE  6700 002A               1154      BEQ     sub_check_ea_string_print           *If it does we'll jump straight to printing
+00001802  B23C 000F               1155      CMP.B   #ea_term,D1                         *See if we are at the end of the available modes
+00001806  6700 0034               1156      BEQ     sub_check_ea_string_not_found       *Branch to not found if true
+0000180A  B23C 0007               1157      CMP.B   #ea_abs,D1                          *Test if it's absolute
+0000180E  6700 000A               1158      BEQ     sub_check_ea_string_abs             *Branch to absolute special case if so
+00001812  B401                    1159      CMP.B   D1,D2                               *Test to see if our mode matches
+00001814  6700 0014               1160      BEQ     sub_check_ea_string_print           *Branch to print if it does
+00001818  60DE                    1161      BRA     sub_check_ea_string_loop            *Otherwise loop back through
+0000181A                          1162  sub_check_ea_string_abs
+0000181A  181A                    1163      MOVE.B  (A2)+,D4                            *Get the absolute addressing mode (as register value)
+0000181C  B43C 0007               1164      CMP.B   #ea_abs,D2                          *Check to see if our mode is the absolute mode
+00001820  66D6                    1165      BNE     sub_check_ea_string_loop            *If it's not we'll go back to the loop
+00001822  B604                    1166      CMP.B   D4,D3                               *See if it matches the register value
+00001824  6700 0004               1167      BEQ     sub_check_ea_string_print           *If so we'll print it out
+00001828  60CE                    1168      BRA     sub_check_ea_string_loop            *Otherwise we'll loop back again
+0000182A                          1169  sub_check_ea_string_print
+0000182A  3F02                    1170      MOVE.W  D2,-(SP)                            *Load the mode to the stack
+0000182C  3F03                    1171      MOVE.W  D3,-(SP)                            *Load the register to the stack
+0000182E  3F05                    1172      MOVE.W  D5,-(SP)                            *Load the size onto the stack
+00001830  6100 FD94               1173      BSR     sub_build_ea_string                 *Build that string
+00001834  4FEF 0006               1174      LEA     6(SP),SP                            *Reset the stack
+00001838  6000 000A               1175      BRA     sub_check_ea_string_rts             *Return
+0000183C                          1176  sub_check_ea_string_not_found
+0000183C  13FC 0001 00001946      1177      MOVE.B  #true,invalid_op_flag               *Set the data invalid flag true
+00001844                          1178  sub_check_ea_string_rts
+00001844  4E75                    1179      RTS
+00001846                          1180  
+00001846                          1181  **************************************************************
+00001846                          1182  *
+00001846                          1183  * sub_build_string_comma_space
+00001846                          1184  *
+00001846                          1185  * This method puts a comma and then a space onto the output_string. It does not take
+00001846                          1186  * any parameters and has no return.
+00001846                          1187  *
+00001846                          1188  sub_build_string_comma_space
+00001846  207C 000018C0           1189      MOVEA.L     #output_string,A0                   *Load the output string
+0000184C  227C 00001997           1190      MOVEA.L     #hex_characters,A1                  *Load the hex characters
+00001852  3039 00001938           1191      MOVE.W      output_string_displacement,D0       *Load current displacement to D0
+00001858  D0C0                    1192      ADD.W       D0,A0                               *Adjust the address for the current displacement
+0000185A  10FC 002C               1193      MOVE.B      #',',(A0)+                          *add a ',' to the output string
+0000185E  10FC 0020               1194      MOVE.B      #' ',(A0)+                          *add a ',' to the output string
+00001862  5440                    1195      ADDQ.W      #2,D0                               *Increase the displacement by two
+00001864  33C0 00001938           1196      MOVE.W      D0,output_string_displacement       *Save the updated displacement
+0000186A  4E75                    1197      RTS
+0000186C                          1198  
+0000186C                          1199  **************************************************************
+0000186C                          1200  *
+0000186C                          1201  * sub_tab
+0000186C                          1202  *
+0000186C                          1203  * This method will first find the next tab stop from the current output_string_displcament and then fill the
+0000186C                          1204  * output strings with spaces until it gets to that position. This acts as a flexible tab stop. This method
+0000186C                          1205  * takes no parameters and has no return values.
+0000186C                          1206  *
+0000186C                          1207  sub_tab
+0000186C  207C 00001AA0           1208      MOVEA.L     #tab_stops,A0
+00001872  227C 000018C0           1209      MOVEA.L     #output_string,A1                   *Load the output string
+00001878  3239 00001938           1210      MOVE.W      output_string_displacement,D1
+0000187E  D2C1                    1211      ADD.W       D1,A1
+00001880                          1212  sub_tab_loop
+00001880  1018                    1213      MOVE.B      (A0)+,D0                            *D0 contains the next tab position
+00001882  B001                    1214      CMP.B       D1,D0                               *See if the displacement is past the tab
+00001884  6FFA                    1215      BLE         sub_tab_loop                        *If the tab is less than the current displacement find the next tab
+00001886                          1216  sub_tab_spc_loop
+00001886  B001                    1217      CMP.B       D1,D0                               *See if the displacement is past the tab
+00001888  6F00 000A               1218      BLE         sub_tab_rts                         *If the tab is less than or equal to the displacement we are done
+0000188C  12FC 0020               1219      MOVE.B      #' ',(A1)+                          *Push a space onto the output string
+00001890  5241                    1220      ADDQ        #1,D1                               *Increment the displacement
+00001892  60F2                    1221      BRA         sub_tab_spc_loop                    *Add another space
+00001894                          1222  sub_tab_rts
+00001894  33C1 00001938           1223      MOVE.W      D1,output_string_displacement
+0000189A  4E75                    1224      RTS
+0000189C                          1225  
+0000189C                          1226  **************************************************************
+0000189C                          1227  *
+0000189C                          1228  * sub_handy_mask
+0000189C                          1229  *
+0000189C                          1230  * Given a value, lower bound, and size, this method will return the masked
+0000189C                          1231  * values starting from the LSB to D0 and return them through D1. This can be used
+0000189C                          1232  * to quickly get the values from a hex string.
+0000189C                          1233  *
+0000189C                          1234  * Register Parameters
+0000189C                          1235  * D0 (L): Should contain the value to mask and split
+0000189C                          1236  *
+0000189C                          1237  * Stack Parameters
+0000189C                          1238  * 1 (W): Lower bit bound
+0000189C                          1239  * 2 (W): Size (number of bits to mask)
+0000189C                          1240  *
+0000189C                          1241  * Register Return
+0000189C                          1242  * D1 (L): Masked value
+0000189C                          1243  *
+00000004=                         1244      OFFSET 4
+00000004=                         1245  sub_handy_mask_size     DS.W    1
+00000006=                         1246  sub_handy_mask_lower    DS.W    1
+0000189C                          1247      ORG *
+0000189C                          1248  
+0000189C                          1249  sub_handy_mask
+0000189C  3A2F 0006               1250      MOVE.W      sub_handy_mask_lower(SP),D5 *Load the lower bound size
+000018A0  342F 0004               1251      MOVE.W      sub_handy_mask_size(SP),D2  *Load the size
+000018A4  5342                    1252      SUBQ.W      #1,D2                       *Decrease size by one to make bounds correct
+000018A6  4283                    1253      CLR.L       D3                          *Clear D3 to be used as a mask
+000018A8  3802                    1254      MOVE.W      D2,D4                       *Copy the size to D4
+000018AA  D845                    1255      ADD.W       D5,D4                       *Add the lower bound and size to get the MSB of the mask
+000018AC                          1256  sub_handy_mask_loop
+000018AC  B845                    1257      CMP.W       D5,D4                       *Compare our counter to the lower bound
+000018AE  6D00 0008               1258      BLT         sub_handy_mask_done         *If our counter is less than or equal we are done making the mask
+000018B2  09C3                    1259      BSET        D4,D3                       *Set the bit to one in the mask at location D4
+000018B4  5344                    1260      SUBQ.W      #1,D4                       *Decrement D4 by one
+000018B6  60F4                    1261      BRA         sub_handy_mask_loop         *Go back to loop again
+000018B8                          1262  sub_handy_mask_done
+000018B8  2200                    1263      MOVE.L      D0,D1                       *Move the value that should be masked to D1
+000018BA  C283                    1264      AND.L       D3,D1                       *Mask it with D3 (the mask we made above)
+000018BC  EAA9                    1265      LSR.L       D5,D1                       *Shift the result right so that it starts at the LSB
+000018BE  4E75                    1266      RTS
+000018C0                          1267  
+000018C0                          1268  
+000018C0                          1269  
+000018C0                          1270  
+000018C0                          1271  ******************************************************************************************************************************************
+000018C0                          1272  ******************************************************************************************************************************************
+000018C0                          1273  ********************************************************** CONSTANT DEFINITIONS **********************************************************
+000018C0                          1274  ******************************************************************************************************************************************
+000018C0                          1275  ******************************************************************************************************************************************
+000018C0                          1276  
+000018C0                          1277  
+000018C0                          1278  
+000018C0                          1279  
+000018C0  =0000FF00               1280  clear_screen                EQU     $FF00
+000018C0                          1281  
+000018C0  =00000001               1282  true                        EQU     1
+000018C0  =00000000               1283  false                       EQU     0
+000018C0                          1284  
+000018C0  =00000000               1285  word_displace               EQU     $00
+000018C0  =000000FF               1286  long_displace               EQU     $FF
+000018C0                          1287  
+000018C0  =00000000               1288  nibble_size                 EQU     0   *This representation cannot be used mathematically
+000018C0  =00000001               1289  byte_size                   EQU     1
+000018C0  =00000002               1290  word_size                   EQU     2
+000018C0  =00000004               1291  long_size                   EQU     4
+000018C0  =0000000F               1292  no_size                     EQU     $F
+000018C0                          1293  
+000018C0  =0000000F               1294  right_nibble_mask           EQU     $000F
+000018C0  =00000000               1295  null                        EQU     0
+000018C0                          1296  
+000018C0  =0000FFFF               1297  cond_term                   EQU     $FFFF
+000018C0  =0000FFFF               1298  op_code_term                EQU     $FFFF
+000018C0  =00000000               1299  op_codes_term               EQU     $0000
+000018C0                          1300  
+000018C0  =00000008               1301  BS                          EQU     $8
+000018C0                          1302  
+000018C0                          1303  *** ea modes ***
+000018C0                          1304  
+000018C0                          1305  * These are the constants that define available EA modes. Their use is outlined in the Disassembler Documentation in the
+000018C0                          1306  * SDL section.
+000018C0                          1307  
+000018C0  =00000000               1308  ea_reg_dir                  EQU     %000
+000018C0  =00000001               1309  ea_add_dir                  EQU     %001
+000018C0  =00000002               1310  ea_ari                      EQU     %010
+000018C0  =00000003               1311  ea_ari_post                 EQU     %011
+000018C0  =00000004               1312  ea_ari_pre                  EQU     %100
+000018C0                          1313  
+000018C0  =00000007               1314  ea_abs                      EQU     %111    *This MUST preceed each ea_word,ea_long,ea_imm
+000018C0  =00000000               1315  ea_word                     EQU     %000    *Used in conjunction with ea_abs
+000018C0  =00000001               1316  ea_long                     EQU     %001    *Used in conjunction with ea_abs
+000018C0  =00000004               1317  ea_imm                      EQU     %100    *Used in conjunction with ea_abs
+000018C0                          1318  
+000018C0  =0000000F               1319  ea_term                     EQU     %1111   *Terminates a list of ea modes
+000018C0  =0000000E               1320  ea_all                      EQU     %1110   *Declares that all ea modes are accepted
+000018C0                          1321  
+000018C0                          1322  *** opf definitions ***
+000018C0                          1323  
+000018C0                          1324  * These opf_ definitions are used to define opcode functionality. Their use is defined in the Disassembler Documentation
+000018C0                          1325  * in the SDL section.
+000018C0                          1326  
+000018C0  =00000000               1327  opf_ea                      EQU     0
+000018C0  =00000001               1328  opf_count                   EQU     1
+000018C0  =00000002               1329  opf_reg                     EQU     2
+000018C0  =00000003               1330  opf_reg_add                 EQU     3
+000018C0  =00000004               1331  opf_count_reg               EQU     4
+000018C0  =00000005               1332  opf_imm                     EQU     5
+000018C0  =00000006               1333  opf_disp                    EQU     6
+000018C0  =00000007               1334  opf_sub                     EQU     7
+000018C0  =00000008               1335  opf_string                  EQU     8
+000018C0  =00000009               1336  opf_cond                    EQU     9
+000018C0                          1337  *opf_vector                 EQU     10 * not supported yet *
+000018C0  =0000000B               1338  opf_flip                    EQU     11
+000018C0  =0000000C               1339  opf_flipped                 EQU     12
+000018C0  =0000000D               1340  opf_sizes                   EQU     13
+000018C0  =0000000E               1341  opf_size                    EQU     14
+000018C0  =0000000F               1342  opf_no_size                 EQU     15
+000018C0  =00000010               1343  opf_term                    EQU     16
+000018C0                          1344  
+000018C0                          1345  
+000018C0                          1346  
+000018C0                          1347  
+000018C0                          1348  ******************************************************************************************************************************************
+000018C0                          1349  ******************************************************************************************************************************************
+000018C0                          1350  *********************************************************** STORAGE AND GLOBALS **********************************************************
+000018C0                          1351  ******************************************************************************************************************************************
+000018C0                          1352  ******************************************************************************************************************************************
+000018C0                          1353  
+000018C0                          1354  
+000018C0                          1355  
+000018C0                          1356  
+000018C0                          1357  *** globals ***
+000018C0                          1358  
+000018C0                          1359  * These are the global variables for the program
+000018C0                          1360  
+000018C0                          1361  output_string               DS.B    120 *Used to build the output
+00001938                          1362  output_string_displacement  DS.W    1   *Used to track the current location in the output string
+0000193A                          1363  current_addr                DS.L    1
+0000193E                          1364  current_addr_backup         DS.L    1
+00001942                          1365  end_addr                    DS.L    1
+00001946                          1366  invalid_op_flag             DS.B    1
+00001947                          1367  input                       DS.B    80  *Allocated dead space to store input values
+00001997                          1368  
+00001997                          1369  *** strings ***
+00001997                          1370  
+00001997                          1371  * These strings are used for output and other tasks
+00001997                          1372  
+00001997= 30 31 32 33 34 35 ...   1373  hex_characters              DC.B    '0123456789ABCDEF'  *Used to build hex strings. Do not change.
+000019A7= 50 72 65 73 73 20 ...   1374  string_press_enter          DC.B    'Press enter to continue...',0
+000019C2= 52 65 61 63 68 65 ...   1375  string_end                  DC.B    'Reached end address. Program halted.',0
+000019E7= 41 64 64 72 65 73 ...   1376  string_invalid_size         DC.B    'Address too large!',0
+000019FA= 41 64 64 72 65 73 ...   1377  string_invalid_address      DC.B    'Address must be word aligned!',0
+00001A18= 4E 6F 74 20 61 20 ...   1378  string_invalid_hex          DC.B    'Not a valid hex value!',0
+00001A2F= 45 6E 74 65 72 20 ...   1379  string_enter_start          DC.B    'Enter a starting hex address: ',0
+00001A4E= 45 6E 74 65 72 20 ...   1380  string_enter_stop           DC.B    'Enter a stopping hex address: ',0
+00001A6D= 44 41 54 41 00          1381  string_data                 DC.B    'DATA',0
+00001A72                          1382  
+00001A72                          1383  * These strings should not be changed and are used to build opcode labels for conditions
+00001A72                          1384  
+00001A72= 54 00                   1385  cond_t                      DC.B    'T',0
+00001A74= 46 00                   1386  cond_f                      DC.B    'F',0
+00001A76= 48 49 00                1387  cond_hi                     DC.B    'HI',0
+00001A79= 4C 53 00                1388  cond_ls                     DC.B    'LS',0
+00001A7C= 43 43 00                1389  cond_cc                     DC.B    'CC',0
+00001A7F= 43 53 00                1390  cond_cs                     DC.B    'CS',0
+00001A82= 4E 45 00                1391  cond_ne                     DC.B    'NE',0
+00001A85= 45 51 00                1392  cond_eq                     DC.B    'EQ',0
+00001A88= 56 43 00                1393  cond_vc                     DC.B    'VC',0
+00001A8B= 56 53 00                1394  cond_vs                     DC.B    'VS',0
+00001A8E= 50 4C 00                1395  cond_pl                     DC.B    'PL',0
+00001A91= 4D 49 00                1396  cond_mi                     DC.B    'MI',0
+00001A94= 47 45 00                1397  cond_ge                     DC.B    'GE',0
+00001A97= 4C 54 00                1398  cond_lt                     DC.B    'LT',0
+00001A9A= 47 54 00                1399  cond_gt                     DC.B    'GT',0
+00001A9D= 4C 45 00                1400  cond_le                     DC.B    'LE',0
+00001AA0                          1401  
+00001AA0                          1402  *** settings ***
+00001AA0                          1403  
+00001AA0                          1404  * Tab stops can be changed here to modify how things are output to the string.
+00001AA0                          1405  
+00001AA0= 0C 18 24                1406  tab_stops                   DC.B    12,24,36
+00001AA3                          1407  
+00001AA3                          1408  *** condition definitions ***
+00001AA3                          1409  
+00001AA3                          1410  * These condition definitions are used to output the cc labels
+00001AA3                          1411  
+00001AA4= 0000 1A72 0001 1A74     1412  conditions                  DC.W    %0000,cond_t,%0001,cond_f
+00001AAC                          1413  * stf (no true false) allows skipping of true and false
+00001AAC= 0002 1A76 0003 1...     1414  conditions_stf              DC.W    %0010,cond_hi,%0011,cond_ls,%0100,cond_cc,%0101,cond_cs,%0110,cond_ne,%0111,cond_eq,%1000,cond_vc
+00001AC8= 0009 1A8B 000A 1...     1415                              DC.W    %1001,cond_vs,%1010,cond_pl,%1011,cond_mi,%1100,cond_ge,%1101,cond_lt,%1110,cond_gt,%1111,cond_le,cond_term
+00001AE6                          1416  
+00001AE6                          1417  
+00001AE6                          1418  
+00001AE6                          1419  
+00001AE6                          1420  ******************************************************************************************************************************************
+00001AE6                          1421  ******************************************************************************************************************************************
+00001AE6                          1422  ************************************************************ OPCODE DEFINITIONS **********************************************************
+00001AE6                          1423  ******************************************************************************************************************************************
+00001AE6                          1424  ******************************************************************************************************************************************
+00001AE6                          1425  
+00001AE6                          1426  
+00001AE6                          1427  *** opcode array ***
+00001AE6                          1428  
+00001AE6                          1429  * All opcodes that should be checked should be in this array. The order is not important. Whenever a new opcode is defined, it should be
+00001AE6                          1430  * placed here so that it is processed.
+00001AE6                          1431  
+00001AE6= 20DA 1C32 1E42 1...     1432  op_codes        DC.W    op_code_movem,op_code_adda,op_code_add,op_code_eor,op_code_divs,op_code_lea,op_code_nop,op_code_movea
+00001AF6= 1C86 1CB0 1CD2 1...     1433                  DC.W    op_code_move,op_code_neg,op_code_ori,op_code_cmpi,op_code_rts,op_code_bclr2
+00001B02= 1D2C 1D4E 1BD0 1...     1434                  DC.W    op_code_jsr,op_code_subq,op_code_or,op_code_sub,op_code_cmp,op_code_muls,op_code_bcc
+00001B10= 1EE2 1FA2 1FE2 1...     1435                  DC.W    op_code_aslm,op_code_lsrm,op_code_lslm,op_code_rolm,op_code_rorm,op_code_asr,op_code_asl,op_code_rol
+00001B20= 1EA2 1EFE 1F7E 1...     1436                  DC.W    op_code_asrm,op_code_ror,op_code_lsr,op_code_lsl,op_code_bra,op_code_bclr
+00001B2C= 21AE 21C6 21F2 2...     1437  op_codes_extra  DC.W    op_code_unlk,op_code_tst,op_code_tas,op_code_swap,op_code_subi,op_code_suba,op_code_rtr,op_code_pea
+00001B3C= 22C4 22F2 2320 2...     1438                  DC.W    op_code_not,op_code_negx,op_code_nbcd,op_code_mulu,op_code_movesr,op_code_moveccr,op_code_jmp
+00001B4A= 23FA 240C 243C 2...     1439                  DC.W    op_code_illegal,op_code_eori,op_code_divu,op_code_cmpm,op_code_cmpa,op_code_clr,op_code_chk,op_code_bsr
+00001B5A= 252A 2556 2584 2...     1440                  DC.W    op_code_scc,op_code_andi,op_code_andi_ccr,op_code_and,op_code_addq,op_code_addi,op_code_moveq,0
+00001B6A                          1441  
+00001B6A                          1442  *** opcode definitions ***
+00001B6A                          1443  
+00001B6A                          1444  * Each opcode below defines an opcodes operation. The definition syntax is defined in the Disassembler Documentation in the SDL section.
+00001B6A                          1445  
+00001B6A= 0E                      1446  op_ea_all           DC.B    ea_all
+00001B6B= 00 02 03 04 07 00 ...   1447  op_ea_dest_std      DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00001B74= 02 03 04 07 00 07 ...   1448  op_ea_no_dir_imm    DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term 
+00001B7C                          1449  
+00001B7C                          1450  
+00001B7C= 4C 45 41 00             1451  op_string_lea   DC.B    'LEA',0
+00001B80= 41C0 F1C0 1B8E FFFF     1452  op_code_lea     DC.W    $41C0,$F1C0,op_def_lea,op_code_term
+00001B88= 02 07 00 07 01 0F       1453  op_ea_lea_src   DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00001B8E= 1B7C 000E 0004 0...     1454  op_def_lea      DC.W    op_string_lea,opf_size,long_size,opf_ea,op_ea_lea_src,3,0,opf_reg,9,ea_add_dir,opf_term
+00001BA4                          1455  
+00001BA4= 45 4F 52 00             1456  op_string_eor   DC.B    'EOR',0
+00001BA8= B100 F100 1BB0 FFFF     1457  op_code_eor     DC.W    $B100,$F100,op_def_eor,op_code_term
+00001BB0= 1BA4 000D 0006 0...     1458  op_def_eor      DC.W    op_string_eor,opf_sizes,6,%00,%01,%10,opf_reg,9,ea_reg_dir,opf_ea,op_ea_dest_std,3,0,opf_term
+00001BCC                          1459  
+00001BCC= 4F 52 00                1460  op_string_or    DC.B   'OR',0
+00001BD0= 8000 F000 1BEC FFFF     1461  op_code_or      DC.W    $8000,$F000,op_def_or,op_code_term
+00001BD8= 00 02 03 04 07 00 ...   1462  op_ea_or_src    DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+00001BE3= 02 03 04 07 00 07 ...   1463  op_ea_or_dest   DC.B    ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00001BEC= 1BCC 000D 0006 0...     1464  op_def_or       DC.W    op_string_or,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_or_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped,opf_reg,9,ea_reg_dir,opf_ea,op_ea_or_dest,3,0,opf_term
+00001C1C                          1465  
+00001C1C= 4E 4F 50 00             1466  op_string_nop   DC.B    'NOP',0
+00001C20= 4E71 FFFF 1C28 FFFF     1467  op_code_nop     DC.W    $4E71,$FFFF,op_def_nop,op_code_term
+00001C28= 1C1C 0010               1468  op_def_nop      DC.W    op_string_nop,opf_term
+00001C2C                          1469  
+00001C2C= 41 44 44 41 00          1470  op_string_adda  DC.B    'ADDA',0
+00001C32= D0C0 F0C0 1C3A FFFF     1471  op_code_adda    DC.W    $D0C0,$F0C0,op_def_adda,op_code_term
+00001C3A= 1C2C 000D 0007 0...     1472  op_def_adda     DC.W    op_string_adda,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_all,3,0,opf_reg,9,ea_add_dir,opf_term
+00001C56                          1473  
+00001C56= 4D 4F 56 45 41 00       1474  op_string_movea DC.B    'MOVEA',0
+00001C5C= 2040 E1C0 1C64 FFFF     1475  op_code_movea   DC.W    $2040,$E1C0,op_def_movea,op_code_term
+00001C64= 1C56 000D 000C 0...     1476  op_def_movea    DC.W    op_string_movea,opf_sizes,12,no_size,%11,%10,opf_ea,op_ea_all,3,0,opf_reg,9,ea_add_dir,opf_term
+00001C80                          1477  
+00001C80= 4D 4F 56 45 00          1478  op_string_move  DC.B    'MOVE',0
+00001C86= 0000 C000 1C8E FFFF     1479  op_code_move    DC.W    $0000,$C000,op_def_move,op_code_term
+00001C8E= 1C80 000D 000C 0...     1480  op_def_move     DC.W    op_string_move,opf_sizes,12,%01,%11,%10,opf_ea,op_ea_all,3,0,opf_ea,op_ea_dest_std,6,9,opf_term
+00001CAC                          1481  
+00001CAC= 4E 45 47 00             1482  op_string_neg   DC.B    'NEG',0
+00001CB0= 4400 FF00 1CB8 FFFF     1483  op_code_neg     DC.W    $4400,$FF00,op_def_neg,op_code_term
+00001CB8= 1CAC 000D 0006 0...     1484  op_def_neg      DC.W    op_string_neg,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_dest_std,3,0,opf_term
+00001CCE                          1485  
+00001CCE= 4F 52 49 00             1486  op_string_ori   DC.B    'ORI',0
+00001CD2= 0000 FF00 1CDA FFFF     1487  op_code_ori     DC.W    $0000,$FF00,op_def_ori,op_code_term
+00001CDA= 1CCE 000D 0006 0...     1488  op_def_ori      DC.W    op_string_ori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_dest_std,3,0,opf_term
+00001CF2                          1489  
+00001CF2= 43 4D 50 49 00          1490  op_string_cmpi  DC.B    'CMPI',0
+00001CF8= 0C00 FF00 1D00 FFFF     1491  op_code_cmpi    DC.W    $0C00,$FF00,op_def_cmpi,op_code_term
+00001D00= 1CF2 000D 0006 0...     1492  op_def_cmpi     DC.W    op_string_cmpi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_dest_std,3,0,opf_term
+00001D18                          1493  
+00001D18= 52 54 53 00             1494  op_string_rts   DC.B    'RTS',0
+00001D1C= 4E75 FFFF 1D24 FFFF     1495  op_code_rts     DC.W    $4E75,$FFFF,op_def_rts,op_code_term
+00001D24= 1D18 0010               1496  op_def_rts      DC.W    op_string_rts,opf_term
+00001D28                          1497  
+00001D28= 4A 53 52 00             1498  op_string_jsr   DC.B    'JSR',0
+00001D2C= 4E80 FFC0 1D3A FFFF     1499  op_code_jsr     DC.W    $4E80,$FFC0,op_def_jsr,op_code_term
+00001D34= 02 07 00 07 01 0F       1500  op_ea_jsr_dest  DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00001D3A= 1D28 000F 0000 1...     1501  op_def_jsr      DC.W    op_string_jsr,opf_no_size,opf_ea,op_ea_jsr_dest,3,0,opf_term
+00001D48                          1502  
+00001D48= 53 55 42 51 00          1503  op_string_subq  DC.B    'SUBQ',0
+00001D4E= 5100 F100 1D60 FFFF     1504  op_code_subq    DC.W    $5100,$F100,op_def_subq,op_code_term
+00001D56= 00 01 02 03 04 07 ...   1505  op_ea_subq_dest DC.B    ea_reg_dir,ea_add_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00001D60= 1D48 000D 0006 0...     1506  op_def_subq     DC.W    op_string_subq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_subq_dest,3,0,opf_term
+00001D7A                          1507  
+00001D7A= 44 49 56 53 00          1508  op_string_divs  DC.B    'DIVS',0
+00001D80= 81C0 F1C0 1D94 FFFF     1509  op_code_divs    DC.W    $81C0,$F1C0,op_def_divs,op_code_term
+00001D88= 00 02 03 04 07 00 ...   1510  op_ea_divs_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+00001D94= 1D7A 000E 0002 0...     1511  op_def_divs     DC.W    op_string_divs,opf_size,word_size,opf_ea,op_ea_divs_src,3,0,opf_reg,9,ea_reg_dir,opf_term
+00001DAA                          1512  
+00001DAA= 53 55 42 00             1513  op_string_sub   DC.B    'SUB',0
+00001DAE= 9000 F000 1DB6 FFFF     1514  op_code_sub     DC.W    $9000,$F000,op_def_sub,op_code_term
+00001DB6= 1DAA 000D 0006 0...     1515  op_def_sub      DC.W    op_string_sub,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+00001DD6= 0002 0009 0000 0...     1516  op_def_sub_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001DE6                          1517  
+00001DE6= 43 4D 50 00             1518  op_string_cmp   DC.B    'CMP',0
+00001DEA= B000 F100 1DF2 FFFF     1519  op_code_cmp     DC.W    $B000,$F100,op_def_cmp,op_code_term
+00001DF2= 1DE6 000D 0006 0...     1520  op_def_cmp      DC.W    op_string_cmp,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_term
+00001E0E                          1521  
+00001E0E= 4D 55 4C 53 00          1522  op_string_muls  DC.B    'MULS',0
+00001E14= C1C0 F1C0 1E28 FFFF     1523  op_code_muls    DC.W    $C1C0,$F1C0,op_def_muls,op_code_term
+00001E1C= 00 02 03 04 07 00 ...   1524  op_ea_muls_src  DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+00001E28= 1E0E 000E 0002 0...     1525  op_def_muls     DC.W    op_string_muls,opf_size,word_size,opf_ea,op_ea_muls_src,3,0,opf_reg,9,ea_reg_dir,opf_term
+00001E3E                          1526  
+00001E3E= 41 44 44 00             1527  op_string_add   DC.B    'ADD',0
+00001E42= D000 F000 1E4A FFFF     1528  op_code_add     DC.W    $D000,$F000,op_def_add,op_code_term
+00001E4A= 1E3E 000D 0006 0...     1529  op_def_add      DC.W    op_string_add,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_all,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+00001E6A= 0002 0009 0000 0...     1530  op_def_add_flip DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001E7A                          1531  
+00001E7A= 41 53 52 00             1532  op_string_asr   DC.B    'ASR',0
+00001E7E= E000 F118 1E86 FFFF     1533  op_code_asr     DC.W    $E000,$F118,op_def_asr,op_code_term
+00001E86= 1E7A 000D 0006 0...     1534  op_def_asr      DC.W    op_string_asr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001EA2                          1535  *** Opcodes for ASR operate differently for memory ***
+00001EA2= E0C0 FFC0 1EAA FFFF     1536  op_code_asrm    DC.W    $E0C0,$FFC0,op_def_asrm,op_code_term
+00001EAA= 1E7A 000E 0002 0...     1537  op_def_asrm     DC.W    op_string_asr,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001EBA                          1538  
+00001EBA= 41 53 4C 00             1539  op_string_asl   DC.B    'ASL',0
+00001EBE= E100 F118 1EC6 FFFF     1540  op_code_asl     DC.W    $E100,$F118,op_def_asl,op_code_term
+00001EC6= 1EBA 000D 0006 0...     1541  op_def_asl      DC.W    op_string_asl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001EE2                          1542  *** Opcodes for ASL operate differently for memory ***
+00001EE2= E1C0 FFC0 1EEA FFFF     1543  op_code_aslm    DC.W    $E1C0,$FFC0,op_def_aslm,op_code_term
+00001EEA= 1EBA 000E 0002 0...     1544  op_def_aslm     DC.W    op_string_asl,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001EFA                          1545  
+00001EFA= 52 4F 52 00             1546  op_string_ror   DC.B    'ROR',0
+00001EFE= E018 F118 1F06 FFFF     1547  op_code_ror     DC.W    $E018,$F118,op_def_ror,op_code_term
+00001F06= 1EFA 000D 0006 0...     1548  op_def_ror      DC.W    op_string_ror,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001F22                          1549  *** Opcodes for ROR operate differently for memory ***
+00001F22= E6C0 FFC0 1F2A FFFF     1550  op_code_rorm    DC.W    $E6C0,$FFC0,op_def_rorm,op_code_term
+00001F2A= 1EFA 000E 0002 0...     1551  op_def_rorm     DC.W    op_string_ror,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001F3A                          1552  
+00001F3A= 52 4F 4C 00             1553  op_string_rol   DC.B    'ROL',0
+00001F3E= E118 F118 1F46 FFFF     1554  op_code_rol     DC.W    $E118,$F118,op_def_rol,op_code_term
+00001F46= 1F3A 000D 0006 0...     1555  op_def_rol      DC.W    op_string_rol,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001F62                          1556  *** Opcodes for ROL operate differently for memory ***
+00001F62= E7C0 FFC0 1F6A FFFF     1557  op_code_rolm    DC.W    $E7C0,$FFC0,op_def_rolm,op_code_term
+00001F6A= 1F3A 000E 0002 0...     1558  op_def_rolm     DC.W    op_string_rol,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001F7A                          1559  
+00001F7A= 4C 53 52 00             1560  op_string_lsr   DC.B    'LSR',0
+00001F7E= E008 F118 1F86 FFFF     1561  op_code_lsr     DC.W    $E008,$F118,op_def_lsr,op_code_term
+00001F86= 1F7A 000D 0006 0...     1562  op_def_lsr      DC.W    op_string_lsr,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001FA2                          1563  *** Opcodes for LSR operate differently for memory ***
+00001FA2= E2C0 FFC0 1FAA FFFF     1564  op_code_lsrm    DC.W    $E2C0,$FFC0,op_def_lsrm,op_code_term
+00001FAA= 1F7A 000E 0002 0...     1565  op_def_lsrm     DC.W    op_string_lsr,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001FBA                          1566  
+00001FBA= 4C 53 4C 00             1567  op_string_lsl   DC.B    'LSL',0
+00001FBE= E108 F118 1FC6 FFFF     1568  op_code_lsl     DC.W    $E108,$F118,op_def_lsl,op_code_term
+00001FC6= 1FBA 000D 0006 0...     1569  op_def_lsl      DC.W    op_string_lsl,opf_sizes,6,%00,%01,%10,opf_count_reg,5,9,ea_reg_dir,opf_reg,0,ea_reg_dir,opf_term
+00001FE2                          1570  *** Opcodes for LSL operate differently for memory ***
+00001FE2= E3C0 FFC0 1FEA FFFF     1571  op_code_lslm    DC.W    $E3C0,$FFC0,op_def_lslm,op_code_term
+00001FEA= 1FBA 000E 0002 0...     1572  op_def_lslm     DC.W    op_string_lsl,opf_size,word_size,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00001FFA                          1573  
+00001FFA= 42 52 41 00             1574  op_string_bra   DC.B    'BRA',0
+00001FFE= 6000 FF00 2006 FFFF     1575  op_code_bra     DC.W    $6000,$FF00,op_def_bra,op_code_term
+00002006= 1FFA 000F 0006 0010     1576  op_def_bra      DC.W    op_string_bra,opf_no_size,opf_disp,opf_term
+0000200E                          1577  
+0000200E= 42 00                   1578  op_string_bcc   DC.B    'B',0
+00002010= 6000 F000 2018 FFFF     1579  op_code_bcc     DC.W    $6000,$F000,op_def_bcc,op_code_term
+00002018= 200E 0009 0008 0...     1580  op_def_bcc      DC.W    op_string_bcc,opf_cond,8,false,opf_no_size,opf_disp,opf_term
+00002026                          1581  
+00002026                          1582  
+00002026= 42 43 4C 52 00          1583  op_string_bclr  DC.B    'BCLR',0
+0000202B                          1584  
+0000202C= 0180 F1C0 2038 2...     1585  op_code_bclr    DC.W    $0180,$F1C0,op_def_bclrL,op_def_bclrB,op_code_term
+00002036= 00 0F                   1586  op_ea_bclrL     DC.B    ea_reg_dir,ea_term                                                      *Long mode can only be data reg direct
+00002038= 2026 000E 0004 0...     1587  op_def_bclrL    DC.W    op_string_bclr,opf_size,long_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_bclrL,3,0,opf_term
+0000204E= 2026 000E 0001 0...     1588  op_def_bclrB    DC.W    op_string_bclr,opf_size,byte_size,opf_reg,9,ea_reg_dir,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00002064                          1589  
+00002064                          1590  * Seperate code for BCLR with immediate data
+00002064= 0880 FFC0 206E 2...     1591  op_code_bclr2   DC.W    $0880,$FFC0,op_def_bclrL2,op_def_bclrB2,op_code_term
+0000206E= 2026 000E 0004 0...     1592  op_def_bclrL2   DC.W    op_string_bclr,opf_size,long_size,opf_sub,sub_op_bclr,opf_ea,op_ea_bclrL,3,0,opf_term
+00002082= 2026 000E 0001 0...     1593  op_def_bclrB2   DC.W    op_string_bclr,opf_size,byte_size,opf_sub,sub_op_bclr,opf_ea,op_ea_no_dir_imm,3,0,opf_term
+00002096                          1594  
+00002096                          1595  sub_op_bclr
+00002096  3F3C 0023               1596      MOVE.W      #'#',-(SP)              *Push the pound sign to the stack
+0000209A  6100 F476               1597      BSR         sub_build_char          *Output the hex
+0000209E  4FEF 0002               1598      LEA         2(SP),SP                *Reset the stack
+000020A2                          1599  
+000020A2  3F3C 0002               1600      MOVE.W      #word_size,-(SP)        *We need the word
+000020A6  6100 F5F8               1601      BSR         sub_get_next_abs        *Get the next absolute to D1
+000020AA  4FEF 0002               1602      LEA         2(SP),SP                *Reset the pointer
+000020AE                          1603  
+000020AE  2001                    1604      MOVE.L      D1,D0                   *Put the value in D0 for handy mask
+000020B0  3F3C 0000               1605      MOVE.W      #0,-(SP)                *We want the byte at index 0
+000020B4  3F3C 0008               1606      MOVE.W      #8,-(SP)                *And we want the whole byte
+000020B8  6100 F7E2               1607      BSR         sub_handy_mask          *Get the value to D1
+000020BC  4FEF 0004               1608      LEA         4(SP),SP                *Reset the stack pointer
+000020C0                          1609  
+000020C0  2F01                    1610      MOVE.L      D1,-(SP)                *Put the number on the stack
+000020C2  3F3C 0001               1611      MOVE.W      #true,-(SP)             *We want it to print the boolean
+000020C6  3F3C 0001               1612      MOVE.W      #byte_size,-(SP)        *It will always be a byte
+000020CA  6100 F49A               1613      BSR         sub_build_hex_string    *Build the string
+000020CE  4FEF 0008               1614      LEA         8(SP),SP                *Reset the stack pointer
+000020D2                          1615  
+000020D2  4E75                    1616      RTS
+000020D4                          1617  
+000020D4                          1618  
+000020D4= 4D 4F 56 45 4D 00       1619  op_string_movem DC.B    'MOVEM',0
+000020DA= 4880 FB80 20F0 FFFF     1620  op_code_movem   DC.W    $4880,$FB80,op_def_movem,op_code_term
+000020E2= 02 04 07 00 07 01 0F    1621  op_ea_movem_rtm DC.B    ea_ari,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000020E9= 02 03 07 00 07 01 0F    1622  op_ea_movem_mtr DC.B    ea_ari,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000020F0= 20D4 000D 0006 0...     1623  op_def_movem    DC.W    op_string_movem,opf_sizes,6,no_size,%10,%11,opf_flip,10,opf_sub,sub_op_movem_rev,opf_ea,op_ea_movem_rtm,3,0
+0000210C= 000C 0000 20E9 0...     1624  op_def_movemf   DC.W    opf_flipped,opf_ea,op_ea_movem_mtr,3,0,opf_sub,sub_op_movem_reg,opf_term
+0000211C                          1625  
+0000211C                          1626  sub_op_movem_reg
+0000211C  1E3C 0000               1627      MOVE.B      #false,D7
+00002120  6000 0006               1628      BRA         sub_op_movem
+00002124                          1629  sub_op_movem_rev
+00002124  1E3C 0001               1630      MOVE.B      #true,D7                *D7 deterimines if this should operate in reverse
+00002128                          1631  sub_op_movem
+00002128  1C3C 0000               1632      MOVE.B      #ea_reg_dir,D6          *Start data register mode
+0000212C  3F3C 0002               1633      MOVE.W      #word_size,-(SP)        *We want the word
+00002130  6100 F56E               1634      BSR         sub_get_next_abs        *Get the next word to D1
+00002134  4FEF 0002               1635      LEA         2(SP),SP                *Reset the stack pointer
+00002138  4202                    1636      CLR.B       D2                      *Clear D2 to use as a counter
+0000213A                          1637  sub_op_movem_loop
+0000213A  B43C 0010               1638      CMP.B       #16,D2                  *See if we are done going through the registers
+0000213E  6C00 005A               1639      BGE         sub_op_movem_rts        *If we are done return control
+00002142  BE3C 0000               1640      CMP.B       #false,D7               *Check the direction
+00002146  6600 0008               1641      BNE         sub_op_movem_loop_lsl   *Go left
+0000214A  E249                    1642      LSR.W       #1,D1                   *Push off the right
+0000214C  6000 0004               1643      BRA         sub_op_movem_loop_output  *Start loop
+00002150                          1644  sub_op_movem_loop_lsl
+00002150  E349                    1645      LSL.W       #1,D1                   *Shift left
+00002152                          1646  sub_op_movem_loop_output
+00002152  6400 0036               1647      BCC         sub_op_movem_chk        *See if the bit that was shifted off was set
+00002156  2602                    1648      MOVE.L      D2,D3                   *Copy the counter
+00002158  86FC 0008               1649      DIVU        #8,D3                   *Mod it with 8 to get the reg number
+0000215C  4843                    1650      SWAP        D3                      *Swap it to put the mod in the right word
+0000215E  48E7 F300               1651      MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP) *Backup registers
+00002162  3F06                    1652      MOVE.W      D6,-(SP)                *Push the register mode onto the stack
+00002164  3F03                    1653      MOVE.W      D3,-(SP)                *Push the register number on
+00002166  3F3C 000F               1654      MOVE.W      #no_size,-(SP)          *We don't care about the size for these modes
+0000216A  6100 F45A               1655      BSR         sub_build_ea_string     *Build the register
+0000216E  4FEF 0006               1656      LEA         6(SP),SP                *Reset the pointer
+00002172  4CDF 00CF               1657      MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7 *Restore the registers
+00002176  48E7 F300               1658      MOVEM.L     D0/D1/D2/D3/D6/D7,-(SP) *Backup the registers
+0000217A  3F3C 002F               1659      MOVE.W      #'/',-(SP)              *Move the slash on
+0000217E  6100 F392               1660      BSR         sub_build_char          *Build it
+00002182  4FEF 0002               1661      LEA         2(SP),SP                *Reset the pointer
+00002186  4CDF 00CF               1662      MOVEM.L     (SP)+,D0/D1/D2/D3/D6/D7 *Restore the registers
+0000218A                          1663  sub_op_movem_chk
+0000218A  B43C 0007               1664      CMP.B       #7,D2                   *See if we need to switch to address mode
+0000218E  6600 0006               1665      BNE         sub_op_movem_inc        *If not we'll increment and continue
+00002192  3C3C 0001               1666      MOVE.W      #ea_add_dir,D6          *Set the mode to address mode
+00002196                          1667  sub_op_movem_inc
+00002196  5202                    1668      ADDQ.B      #1,D2                   *Increment the counter
+00002198  60A0                    1669      BRA         sub_op_movem_loop       *Branch back to the loop
+0000219A                          1670  sub_op_movem_rts
+0000219A  3F3C 0008               1671      MOVE.W      #BS,-(SP)               *Request a backspace (we need to solve the fence post problem with the '/'s)
+0000219E  6100 F372               1672      BSR         sub_build_char          *Go back
+000021A2  4FEF 0002               1673      LEA         2(SP),SP                *Restore the pointers
+000021A6  4E75                    1674      RTS
+000021A8                          1675  
+000021A8                          1676  *** extra definitions ***
+000021A8                          1677  
+000021A8                          1678  * the following definitions go beyond the required scope of the project
+000021A8                          1679  
+000021A8= 55 4E 4C 4B 00          1680  op_string_unlk      DC.B    'UNLK',0
+000021AE= 4E58 FFF8 21B6 FFFF     1681  op_code_unlk        DC.W    $4E58,$FFF8,op_def_unlk,op_code_term
+000021B6= 21A8 000F 0002 0...     1682  op_def_unlk         DC.W    op_string_unlk,opf_no_size,opf_reg,0,ea_add_dir,opf_term
+000021C2                          1683  
+000021C2= 54 53 54 00             1684  op_string_tst       DC.B    'TST',0
+000021C6= 4A00 FF00 21D8 FFFF     1685  op_code_tst         DC.W    $4A00,$FF00,op_def_tst,op_code_term
+000021CE= 00 02 04 03 07 00 ...   1686  op_ea_tst_dest      DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000021D8= 21C2 000D 0006 0...     1687  op_def_tst          DC.W    op_string_tst,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_tst_dest,3,0,opf_term
+000021EE                          1688  
+000021EE= 54 41 53 00             1689  op_string_tas       DC.B    'TAS',0
+000021F2= 4AC0 FFC0 2204 FFFF     1690  op_code_tas         DC.W    $4AC0,$FFC0,op_def_tas,op_code_term
+000021FA= 00 02 04 03 07 00 ...   1691  op_ea_tas           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002204= 21EE 000E 0001 0...     1692  op_def_tas          DC.W    op_string_tas,opf_size,byte_size,opf_ea,op_ea_tas,3,0,opf_term
+00002214                          1693  
+00002214= 53 57 41 50 00          1694  op_string_swap      DC.B    'SWAP',0
+0000221A= 4840 FFF8 2222 FFFF     1695  op_code_swap        DC.W    $4840,$FFF8,op_def_swap,op_code_term
+00002222= 2214 000E 0002 0...     1696  op_def_swap         DC.W    op_string_swap,opf_size,word_size,opf_reg,0,ea_reg_dir,opf_term
+00002230                          1697  
+00002230= 53 55 42 49 00          1698  op_string_subi      DC.B    'SUBI',0
+00002236= 0400 FF00 2248 FFFF     1699  op_code_subi        DC.W    $0400,$FF00,op_def_subi,op_code_term
+0000223E= 00 02 04 03 07 00 ...   1700  op_ea_subi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002248= 2230 000D 0006 0...     1701  op_def_subi         DC.W    op_string_subi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_subi,3,0,opf_term
+00002260                          1702  
+00002260= 53 55 42 41 00          1703  op_string_suba      DC.B    'SUBA',0
+00002266= 90C0 F0C0 2270 FFFF     1704  op_code_suba        DC.W    $90C0,$F0C0,op_def_suba,op_code_term
+0000226E= 0E                      1705  op_ea_suba_src      DC.B    ea_all
+00002270= 2260 000D 0007 0...     1706  op_def_suba         DC.W    op_string_suba,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_suba_src,3,0,opf_reg,9,ea_add_dir,opf_term
+0000228C                          1707  
+0000228C= 52 54 52 00             1708  op_string_rtr       DC.B    'RTR',0
+00002290= 4E77 FFFF 2298 FFFF     1709  op_code_rtr         DC.W    $4E77,$FFFF,op_def_rtr,op_code_term
+00002298= 228C 000F 0010          1710  op_def_rtr          DC.W    op_string_rtr,opf_no_size,opf_term
+0000229E                          1711  
+0000229E= 50 45 41 00             1712  op_string_pea       DC.B    'PEA',0
+000022A2= 4840 FFC0 22B0 FFFF     1713  op_code_pea         DC.W    $4840,$FFC0,op_def_pea,op_code_term
+000022AA= 02 07 00 07 01 0F       1714  op_ea_pea           DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000022B0= 229E 000E 0004 0...     1715  op_def_pea          DC.W    op_string_pea,opf_size,long_size,opf_ea,op_ea_pea,3,0,opf_term
+000022C0                          1716  
+000022C0= 4E 4F 54 00             1717  op_string_not       DC.B    'NOT',0
+000022C4= 4600 FF00 22D6 FFFF     1718  op_code_not         DC.W    $4600,$FF00,op_def_not,op_code_term
+000022CC= 00 02 03 04 07 00 ...   1719  op_ea_not           DC.B    ea_reg_dir,ea_ari,ea_ari_post,ea_ari_pre,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000022D6= 22C0 000D 0006 0...     1720  op_def_not          DC.W    op_string_not,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_not,3,0,opf_term
+000022EC                          1721  
+000022EC= 4E 45 47 58 00          1722  op_string_negx      DC.B    'NEGX',0
+000022F2= 4000 FF00 2304 FFFF     1723  op_code_negx        DC.W    $4000,$FF00,op_def_negx,op_code_term
+000022FA= 00 02 04 03 07 00 ...   1724  op_ea_negx          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002304= 22EC 000D 0006 0...     1725  op_def_negx         DC.W    op_string_negx,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_negx,3,0,opf_term
+0000231A                          1726  
+0000231A= 4E 42 43 44 00          1727  op_string_nbcd      DC.B    'NBCD',0
+00002320= 4800 FFC0 2332 FFFF     1728  op_code_nbcd        DC.W    $4800,$FFC0,op_def_nbcd,op_code_term
+00002328= 00 02 04 03 07 00 ...   1729  op_ea_nbcd          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002332= 231A 000E 0001 0...     1730  op_def_nbcd         DC.W    op_string_nbcd,opf_size,byte_size,opf_ea,op_ea_nbcd,3,0,opf_term
+00002342                          1731  
+00002342= 4D 55 4C 55 00          1732  op_string_mulu      DC.B    'MULU',0
+00002348= C0C0 F1C0 235C FFFF     1733  op_code_mulu        DC.W    $C0C0,$F1C0,op_def_mulu,op_code_term
+00002350= 00 02 04 03 07 00 ...   1734  op_ea_mulu          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+0000235C= 2342 000E 0002 0...     1735  op_def_mulu         DC.W    op_string_mulu,opf_size,word_size,opf_ea,op_ea_mulu,3,0,opf_reg,9,ea_reg_dir,opf_term
+00002372                          1736  
+00002372= 4D 4F 56 45 00          1737  op_string_movesr    DC.B    'MOVE',0
+00002377= 53 52 00                1738  op_string_sr        DC.B    'SR',0
+0000237A= 40C0 FFC0 238C FFFF     1739  op_code_movesr      DC.W    $40C0,$FFC0,op_def_movesr,op_code_term
+00002382= 00 02 04 03 07 00 ...   1740  op_ea_movesr        DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+0000238C= 2372 000E 0002 0...     1741  op_def_movesr       DC.W    op_string_movesr,opf_size,word_size,opf_string,op_string_sr,opf_ea,op_ea_movesr,3,0,opf_term
+000023A0                          1742  
+000023A0= 4D 4F 56 45 00          1743  op_string_moveccr   DC.B    'MOVE',0
+000023A5= 43 43 52 00             1744  op_string_ccr       DC.B    'CCR',0
+000023AA= 44C0 FFC0 23BE FFFF     1745  op_code_moveccr     DC.W    $44C0,$FFC0,op_def_moveccr,op_code_term
+000023B2= 00 02 04 03 07 00 ...   1746  op_ea_moveccr       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+000023BE= 23A0 000E 0002 0...     1747  op_def_moveccr      DC.W    op_string_moveccr,opf_size,word_size,opf_ea,op_ea_moveccr,3,0,opf_string,op_string_ccr,opf_term
+000023D2                          1748  
+000023D2= 4A 4D 50 00             1749  op_string_jmp       DC.B    'JMP',0
+000023D6= 4EC0 FFC0 23E4 FFFF     1750  op_code_jmp         DC.W    $4EC0,$FFC0,op_def_jmp,op_code_term
+000023DE= 02 07 00 07 01 0F       1751  op_ea_jmp           DC.B    ea_ari,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000023E4= 23D2 000F 0000 2...     1752  op_def_jmp          DC.W    op_string_jmp,opf_no_size,opf_ea,op_ea_jmp,3,0,opf_term
+000023F2                          1753  
+000023F2= 49 4C 4C 45 47 41 ...   1754  op_string_illegal   DC.B    'ILLEGAL',0
+000023FA= 4AFC FFFF 2402 FFFF     1755  op_code_illegal     DC.W    $4AFC,$FFFF,op_def_illegal,op_code_term
+00002402= 23F2 0010               1756  op_def_illegal      DC.W    op_string_illegal,opf_term
+00002406                          1757  
+00002406= 45 4F 52 49 00          1758  op_string_eori      DC.B    'EORI',0
+0000240C= 0A00 FF00 241E FFFF     1759  op_code_eori        DC.W    $0A00,$FF00,op_def_eori,op_code_term
+00002414= 00 02 04 03 07 00 ...   1760  op_ea_eori          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+0000241E= 2406 000D 0006 0...     1761  op_def_eori         DC.W    op_string_eori,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_eori,3,0,opf_term
+00002436                          1762  
+00002436= 44 49 56 55 00          1763  op_string_divu      DC.B    'DIVU',0
+0000243C= 80C0 F1C0 2450 FFFF     1764  op_code_divu        DC.W    $80C0,$F1C0,op_def_divu,op_code_term
+00002444= 00 02 04 03 07 00 ...   1765  op_ea_divu          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+00002450= 2436 000E 0002 0...     1766  op_def_divu         DC.W    op_string_divu,opf_size,word_size,opf_ea,op_ea_divu,3,0,opf_reg,9,ea_reg_dir,opf_term
+00002466                          1767  
+00002466= 43 4D 50 4D 00          1768  op_string_cmpm      DC.B    'CMPM',0
+0000246C= B108 F138 2474 FFFF     1769  op_code_cmpm        DC.W    $B108,$F138,op_def_cmpm,op_code_term
+00002474= 2466 000D 0006 0...     1770  op_def_cmpm         DC.W    op_string_cmpm,opf_sizes,6,%00,%01,%10,opf_reg,0,ea_ari_post,opf_reg,9,ea_ari_post,opf_term
+0000248E                          1771  
+0000248E= 43 4D 50 41 00          1772  op_string_cmpa      DC.B    'CMPA',0
+00002494= B0C0 F0C0 249E FFFF     1773  op_code_cmpa        DC.W    $B0C0,$F0C0,op_def_cmpa,op_code_term
+0000249C= 0E                      1774  op_ea_cmpa          DC.B    ea_all
+0000249E= 248E 000D 0007 0...     1775  op_def_cmpa         DC.W    op_string_cmpa,opf_sizes,7,no_size,%01,%11,opf_ea,op_ea_cmpa,3,0,opf_reg,9,ea_add_dir,opf_term
+000024BA                          1776  
+000024BA= 43 4C 52 00             1777  op_string_clr       DC.B    'CLR',0
+000024BE= 4200 FF00 24D0 FFFF     1778  op_code_clr         DC.W    $4200,$FF00,op_def_clr,op_code_term
+000024C6= 00 02 04 03 07 00 ...   1779  op_ea_clr           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000024D0= 24BA 000D 0006 0...     1780  op_def_clr          DC.W    op_string_clr,opf_sizes,6,%00,%01,%10,opf_ea,op_ea_clr,3,0,opf_term
+000024E6                          1781  
+000024E6= 43 48 4B 00             1782  op_string_chk       DC.B    'CHK',0
+000024EA= 4100 F140 24FE FFFF     1783  op_code_chk         DC.W    $4100,$F140,op_def_chk,op_code_term
+000024F2= 00 02 04 03 07 00 ...   1784  op_ea_chk           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+000024FE= 24E6 000E 0002 0...     1785  op_def_chk          DC.W    op_string_chk,opf_size,word_size,opf_ea,op_ea_chk,3,0,opf_reg,9,ea_reg_dir,opf_term
+00002514                          1786  
+00002514= 42 53 52 00             1787  op_string_bsr       DC.B    'BSR',0
+00002518= 6100 FF00 2520 FFFF     1788  op_code_bsr         DC.W    $6100,$FF00,op_def_bsr,op_code_term
+00002520= 2514 000F 0006 0010     1789  op_def_bsr          DC.W    op_string_bsr,opf_no_size,opf_disp,opf_term
+00002528                          1790  
+00002528= 53 00                   1791  op_string_scc       DC.B    'S',0
+0000252A= 50C0 F0C0 253C FFFF     1792  op_code_scc         DC.W    $50C0,$F0C0,op_def_scc,op_code_term
+00002532= 00 02 04 03 07 00 ...   1793  op_ea_scc           DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+0000253C= 2528 0009 0008 0...     1794  op_def_scc          DC.W    op_string_scc,opf_cond,8,true,opf_no_size,opf_ea,op_ea_scc,3,0,opf_term
+00002550                          1795  
+00002550= 41 4E 44 49 00          1796  op_string_andi      DC.B    'ANDI',0
+00002556= 0200 FF00 2568 FFFF     1797  op_code_andi        DC.W    $0200,$FF00,op_def_andi,op_code_term
+0000255E= 00 02 04 03 07 00 ...   1798  op_ea_andi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002568= 2550 000D 0006 0...     1799  op_def_andi         DC.W    op_string_andi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_andi,3,0,opf_term
+00002580                          1800  
+00002580= 43 43 52 00             1801  op_string_andi_ccr  DC.B    'CCR',0
+00002584= 023C FFFF 258C FFFF     1802  op_code_andi_ccr    DC.W    $023C,$FFFF,op_def_andi_ccr,op_code_term
+0000258C= 2550 000E 0001 0...     1803  op_def_andi_ccr     DC.W    op_string_andi,opf_size,byte_size,opf_imm,opf_string,op_string_andi_ccr,opf_term
+0000259A                          1804  
+0000259A= 41 4E 44 00             1805  op_string_and       DC.B    'AND',0
+0000259E= C000 F000 25BA FFFF     1806  op_code_and         DC.W    $C000,$F000,op_def_and,op_code_term
+000025A6= 00 02 04 03 07 00 ...   1807  op_ea_and_src       DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_abs,ea_imm,ea_term
+000025B1= 02 04 03 07 00 07 ...   1808  op_ea_and_dest      DC.B    ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+000025BA= 259A 000D 0006 0...     1809  op_def_and          DC.W    op_string_and,opf_sizes,6,%00,%01,%10,opf_flip,8,opf_ea,op_ea_and_src,3,0,opf_reg,9,ea_reg_dir,opf_flipped
+000025DA= 0002 0009 0000 0...     1810  op_def_and_flipped  DC.W    opf_reg,9,ea_reg_dir,opf_ea,op_ea_and_dest,3,0,opf_term
+000025EA                          1811  
+000025EA= 41 44 44 51 00          1812  op_string_addq      DC.B    'ADDQ',0
+000025F0= 5000 F100 2602 FFFF     1813  op_code_addq        DC.W    $5000,$F100,op_def_addq,op_code_term
+000025F8= 01 00 02 04 03 07 ...   1814  op_ea_addq          DC.B    ea_add_dir,ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002602= 25EA 000D 0006 0...     1815  op_def_addq         DC.W    op_string_addq,opf_sizes,6,%00,%01,%10,opf_count,9,opf_ea,op_ea_addq,3,0,opf_term
+0000261C                          1816  
+0000261C= 41 44 44 49 00          1817  op_string_addi      DC.B    'ADDI',0
+00002622= 0600 FF00 2634 FFFF     1818  op_code_addi        DC.W    $0600,$FF00,op_def_addi,op_code_term
+0000262A= 00 02 04 03 07 00 ...   1819  op_ea_addi          DC.B    ea_reg_dir,ea_ari,ea_ari_pre,ea_ari_post,ea_abs,ea_word,ea_abs,ea_long,ea_term
+00002634= 261C 000D 0006 0...     1820  op_def_addi         DC.W    op_string_addi,opf_sizes,6,%00,%01,%10,opf_imm,opf_ea,op_ea_addi,3,0,opf_term
+0000264C                          1821  
+0000264C= 4D 4F 56 45 51 00       1822  op_string_moveq     DC.B    'MOVEQ',0
+00002652= 7000 F100 265A FFFF     1823  op_code_moveq       DC.W    $7000,$F100,op_def_moveq,op_code_term
+0000265A= 264C 000E 0004 0...     1824  op_def_moveq        DC.W    op_string_moveq,opf_size,long_size,opf_sub,sub_op_moveq,opf_reg,9,ea_reg_dir,opf_term
+0000266C                          1825  
+0000266C                          1826  sub_op_moveq
+0000266C  3F3C 0000               1827      MOVE.W          #0,-(SP)                *We want the byte at bit 0
+00002670  3F3C 0008               1828      MOVE.W          #8,-(SP)                *We want a byte
+00002674  6100 F226               1829      BSR             sub_handy_mask          *Mask the value to d1
+00002678  4FEF 0004               1830      LEA             4(SP),SP                *Reset the stack pointer
+0000267C                          1831  
+0000267C  48E7 4000               1832      MOVEM.L         D1,-(SP)                *Backup the registers
+00002680  3F3C 0023               1833      MOVE.W          #'#',-(SP)              *Put a pound sign on for immediate
+00002684  6100 EE8C               1834      BSR             sub_build_char          *Build it
+00002688  4FEF 0002               1835      LEA             2(SP),SP                *Reset the stack
+0000268C  4CDF 0002               1836      MOVEM.L         (SP)+,D1                *Restore the registers
+00002690                          1837  
+00002690  2F01                    1838      MOVE.L          D1,-(SP)                *Put the value on the stack
+00002692  3F3C 0001               1839      MOVE.W          #true,-(SP)             *We want a hex sign
+00002696  3F3C 0001               1840      MOVE.W          #byte_size,-(SP)        *We want to print a byte
+0000269A  6100 EECA               1841      BSR             sub_build_hex_string    *Build it
+0000269E  4FEF 0008               1842      LEA             8(SP),SP                *Reset the stack pointer
+000026A2                          1843  
+000026A2  4E75                    1844      RTS
+000026A4                          1845  
+000026A4                          1846  ******************************************************************************************************************************************
+000026A4                          1847  ******************************************************************************************************************************************
+000026A4                          1848  ************************************************************* END OF PROGRAM *************************************************************
+000026A4                          1849  ******************************************************************************************************************************************
+000026A4                          1850  ******************************************************************************************************************************************
+000026A4                          1851  
+000026A4                          1852      END    START
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+BS                  8
+BYTE_SIZE           1
+CLEAR_SCREEN        FF00
+CONDITIONS          1AA4
+CONDITIONS_STF      1AAC
+COND_CC             1A7C
+COND_CS             1A7F
+COND_EQ             1A85
+COND_F              1A74
+COND_GE             1A94
+COND_GT             1A9A
+COND_HI             1A76
+COND_LE             1A9D
+COND_LS             1A79
+COND_LT             1A97
+COND_MI             1A91
+COND_NE             1A82
+COND_PL             1A8E
+COND_T              1A72
+COND_TERM           FFFF
+COND_VC             1A88
+COND_VS             1A8B
+CURRENT_ADDR        193A
+CURRENT_ADDR_BACKUP  193E
+DONE                1106
+EA_ABS              7
+EA_ADD_DIR          1
+EA_ALL              E
+EA_ARI              2
+EA_ARI_POST         3
+EA_ARI_PRE          4
+EA_IMM              4
+EA_LONG             1
+EA_REG_DIR          0
+EA_TERM             F
+EA_WORD             0
+END_ADDR            1942
+FALSE               0
+HEX_CHARACTERS      1997
+INPUT               1947
+INVALID_OP_FLAG     1946
+LONG_DISPLACE       FF
+LONG_SIZE           4
+LOOP                1034
+LOOP_OPCODES        1070
+LOOP_OPDEFS         1086
+NIBBLE_SIZE         0
+NO_SIZE             F
+NULL                0
+OPF_COND            9
+OPF_COUNT           1
+OPF_COUNT_REG       4
+OPF_DISP            6
+OPF_EA              0
+OPF_FLIP            B
+OPF_FLIPPED         C
+OPF_IMM             5
+OPF_NO_SIZE         F
+OPF_REG             2
+OPF_REG_ADD         3
+OPF_SIZE            E
+OPF_SIZES           D
+OPF_STRING          8
+OPF_SUB             7
+OPF_TERM            10
+OP_CODES            1AE6
+OP_CODES_EXTRA      1B2C
+OP_CODES_TERM       0
+OP_CODE_ADD         1E42
+OP_CODE_ADDA        1C32
+OP_CODE_ADDI        2622
+OP_CODE_ADDQ        25F0
+OP_CODE_AND         259E
+OP_CODE_ANDI        2556
+OP_CODE_ANDI_CCR    2584
+OP_CODE_ASL         1EBE
+OP_CODE_ASLM        1EE2
+OP_CODE_ASR         1E7E
+OP_CODE_ASRM        1EA2
+OP_CODE_BCC         2010
+OP_CODE_BCLR        202C
+OP_CODE_BCLR2       2064
+OP_CODE_BRA         1FFE
+OP_CODE_BSR         2518
+OP_CODE_CHK         24EA
+OP_CODE_CLR         24BE
+OP_CODE_CMP         1DEA
+OP_CODE_CMPA        2494
+OP_CODE_CMPI        1CF8
+OP_CODE_CMPM        246C
+OP_CODE_DIVS        1D80
+OP_CODE_DIVU        243C
+OP_CODE_EOR         1BA8
+OP_CODE_EORI        240C
+OP_CODE_ILLEGAL     23FA
+OP_CODE_JMP         23D6
+OP_CODE_JSR         1D2C
+OP_CODE_LEA         1B80
+OP_CODE_LSL         1FBE
+OP_CODE_LSLM        1FE2
+OP_CODE_LSR         1F7E
+OP_CODE_LSRM        1FA2
+OP_CODE_MOVE        1C86
+OP_CODE_MOVEA       1C5C
+OP_CODE_MOVECCR     23AA
+OP_CODE_MOVEM       20DA
+OP_CODE_MOVEQ       2652
+OP_CODE_MOVESR      237A
+OP_CODE_MULS        1E14
+OP_CODE_MULU        2348
+OP_CODE_NBCD        2320
+OP_CODE_NEG         1CB0
+OP_CODE_NEGX        22F2
+OP_CODE_NOP         1C20
+OP_CODE_NOT         22C4
+OP_CODE_OR          1BD0
+OP_CODE_ORI         1CD2
+OP_CODE_PEA         22A2
+OP_CODE_ROL         1F3E
+OP_CODE_ROLM        1F62
+OP_CODE_ROR         1EFE
+OP_CODE_RORM        1F22
+OP_CODE_RTR         2290
+OP_CODE_RTS         1D1C
+OP_CODE_SCC         252A
+OP_CODE_SUB         1DAE
+OP_CODE_SUBA        2266
+OP_CODE_SUBI        2236
+OP_CODE_SUBQ        1D4E
+OP_CODE_SWAP        221A
+OP_CODE_TAS         21F2
+OP_CODE_TERM        FFFF
+OP_CODE_TST         21C6
+OP_CODE_UNLK        21AE
+OP_DEF_ADD          1E4A
+OP_DEF_ADDA         1C3A
+OP_DEF_ADDI         2634
+OP_DEF_ADDQ         2602
+OP_DEF_ADD_FLIP     1E6A
+OP_DEF_AND          25BA
+OP_DEF_ANDI         2568
+OP_DEF_ANDI_CCR     258C
+OP_DEF_AND_FLIPPED  25DA
+OP_DEF_ASL          1EC6
+OP_DEF_ASLM         1EEA
+OP_DEF_ASR          1E86
+OP_DEF_ASRM         1EAA
+OP_DEF_BCC          2018
+OP_DEF_BCLRB        204E
+OP_DEF_BCLRB2       2082
+OP_DEF_BCLRL        2038
+OP_DEF_BCLRL2       206E
+OP_DEF_BRA          2006
+OP_DEF_BSR          2520
+OP_DEF_CHK          24FE
+OP_DEF_CLR          24D0
+OP_DEF_CMP          1DF2
+OP_DEF_CMPA         249E
+OP_DEF_CMPI         1D00
+OP_DEF_CMPM         2474
+OP_DEF_DIVS         1D94
+OP_DEF_DIVU         2450
+OP_DEF_EOR          1BB0
+OP_DEF_EORI         241E
+OP_DEF_ILLEGAL      2402
+OP_DEF_JMP          23E4
+OP_DEF_JSR          1D3A
+OP_DEF_LEA          1B8E
+OP_DEF_LSL          1FC6
+OP_DEF_LSLM         1FEA
+OP_DEF_LSR          1F86
+OP_DEF_LSRM         1FAA
+OP_DEF_MOVE         1C8E
+OP_DEF_MOVEA        1C64
+OP_DEF_MOVECCR      23BE
+OP_DEF_MOVEM        20F0
+OP_DEF_MOVEMF       210C
+OP_DEF_MOVEQ        265A
+OP_DEF_MOVESR       238C
+OP_DEF_MULS         1E28
+OP_DEF_MULU         235C
+OP_DEF_NBCD         2332
+OP_DEF_NEG          1CB8
+OP_DEF_NEGX         2304
+OP_DEF_NOP          1C28
+OP_DEF_NOT          22D6
+OP_DEF_OR           1BEC
+OP_DEF_ORI          1CDA
+OP_DEF_PEA          22B0
+OP_DEF_ROL          1F46
+OP_DEF_ROLM         1F6A
+OP_DEF_ROR          1F06
+OP_DEF_RORM         1F2A
+OP_DEF_RTR          2298
+OP_DEF_RTS          1D24
+OP_DEF_SCC          253C
+OP_DEF_SUB          1DB6
+OP_DEF_SUBA         2270
+OP_DEF_SUBI         2248
+OP_DEF_SUBQ         1D60
+OP_DEF_SUB_FLIP     1DD6
+OP_DEF_SWAP         2222
+OP_DEF_TAS          2204
+OP_DEF_TST          21D8
+OP_DEF_UNLK         21B6
+OP_EA_ADDI          262A
+OP_EA_ADDQ          25F8
+OP_EA_ALL           1B6A
+OP_EA_ANDI          255E
+OP_EA_AND_DEST      25B1
+OP_EA_AND_SRC       25A6
+OP_EA_BCLRL         2036
+OP_EA_CHK           24F2
+OP_EA_CLR           24C6
+OP_EA_CMPA          249C
+OP_EA_DEST_STD      1B6B
+OP_EA_DIVS_SRC      1D88
+OP_EA_DIVU          2444
+OP_EA_EORI          2414
+OP_EA_JMP           23DE
+OP_EA_JSR_DEST      1D34
+OP_EA_LEA_SRC       1B88
+OP_EA_MOVECCR       23B2
+OP_EA_MOVEM_MTR     20E9
+OP_EA_MOVEM_RTM     20E2
+OP_EA_MOVESR        2382
+OP_EA_MULS_SRC      1E1C
+OP_EA_MULU          2350
+OP_EA_NBCD          2328
+OP_EA_NEGX          22FA
+OP_EA_NOT           22CC
+OP_EA_NO_DIR_IMM    1B74
+OP_EA_OR_DEST       1BE3
+OP_EA_OR_SRC        1BD8
+OP_EA_PEA           22AA
+OP_EA_SCC           2532
+OP_EA_SUBA_SRC      226E
+OP_EA_SUBI          223E
+OP_EA_SUBQ_DEST     1D56
+OP_EA_TAS           21FA
+OP_EA_TST_DEST      21CE
+OP_STRING_ADD       1E3E
+OP_STRING_ADDA      1C2C
+OP_STRING_ADDI      261C
+OP_STRING_ADDQ      25EA
+OP_STRING_AND       259A
+OP_STRING_ANDI      2550
+OP_STRING_ANDI_CCR  2580
+OP_STRING_ASL       1EBA
+OP_STRING_ASR       1E7A
+OP_STRING_BCC       200E
+OP_STRING_BCLR      2026
+OP_STRING_BRA       1FFA
+OP_STRING_BSR       2514
+OP_STRING_CCR       23A5
+OP_STRING_CHK       24E6
+OP_STRING_CLR       24BA
+OP_STRING_CMP       1DE6
+OP_STRING_CMPA      248E
+OP_STRING_CMPI      1CF2
+OP_STRING_CMPM      2466
+OP_STRING_DIVS      1D7A
+OP_STRING_DIVU      2436
+OP_STRING_EOR       1BA4
+OP_STRING_EORI      2406
+OP_STRING_ILLEGAL   23F2
+OP_STRING_JMP       23D2
+OP_STRING_JSR       1D28
+OP_STRING_LEA       1B7C
+OP_STRING_LSL       1FBA
+OP_STRING_LSR       1F7A
+OP_STRING_MOVE      1C80
+OP_STRING_MOVEA     1C56
+OP_STRING_MOVECCR   23A0
+OP_STRING_MOVEM     20D4
+OP_STRING_MOVEQ     264C
+OP_STRING_MOVESR    2372
+OP_STRING_MULS      1E0E
+OP_STRING_MULU      2342
+OP_STRING_NBCD      231A
+OP_STRING_NEG       1CAC
+OP_STRING_NEGX      22EC
+OP_STRING_NOP       1C1C
+OP_STRING_NOT       22C0
+OP_STRING_OR        1BCC
+OP_STRING_ORI       1CCE
+OP_STRING_PEA       229E
+OP_STRING_ROL       1F3A
+OP_STRING_ROR       1EFA
+OP_STRING_RTR       228C
+OP_STRING_RTS       1D18
+OP_STRING_SCC       2528
+OP_STRING_SR        2377
+OP_STRING_SUB       1DAA
+OP_STRING_SUBA      2260
+OP_STRING_SUBI      2230
+OP_STRING_SUBQ      1D48
+OP_STRING_SWAP      2214
+OP_STRING_TAS       21EE
+OP_STRING_TST       21C2
+OP_STRING_UNLK      21A8
+OUTPUT              1114
+OUTPUT_DATA         10D4
+OUTPUT_STRING       18C0
+OUTPUT_STRING_DISPLACEMENT  1938
+RIGHT_NIBBLE_MASK   F
+START               1000
+STRING_DATA         1A6D
+STRING_END          19C2
+STRING_ENTER_START  1A2F
+STRING_ENTER_STOP   1A4E
+STRING_INVALID_ADDRESS  19FA
+STRING_INVALID_HEX  1A18
+STRING_INVALID_SIZE  19E7
+STRING_PRESS_ENTER  19A7
+SUB_BUILD_CHAR      1512
+SUB_BUILD_CHAR_ASCII  4
+SUB_BUILD_CHAR_OUTPUT  1532
+SUB_BUILD_CHAR_RTS  1536
+SUB_BUILD_COUNT     13D0
+SUB_BUILD_COUNT_OUTPUT  140A
+SUB_BUILD_COUNT_POS  4
+SUB_BUILD_CURRENT_LINE_ADDRESS  14E2
+SUB_BUILD_CURRENT_LINE_BUILD  1504
+SUB_BUILD_CURRENT_LINE_LONG  1500
+SUB_BUILD_DATA      1392
+SUB_BUILD_DIRECT_STRING  16C2
+SUB_BUILD_DIRECT_STRING_EA  6
+SUB_BUILD_DIRECT_STRING_START  4
+SUB_BUILD_DISPLACEMENT  16E8
+SUB_BUILD_DISPLACEMENT_BYTE  170C
+SUB_BUILD_DISPLACEMENT_OFFSET  4
+SUB_BUILD_DISPLACEMENT_OUTPUT  1712
+SUB_BUILD_EA_STRING  15C6
+SUB_BUILD_EA_STRING_ABS_PRINT  160E
+SUB_BUILD_EA_STRING_ADDR_LONG  160A
+SUB_BUILD_EA_STRING_IMMEDIATE  15F2
+SUB_BUILD_EA_STRING_MODE  8
+SUB_BUILD_EA_STRING_OPEN_PAREN  164C
+SUB_BUILD_EA_STRING_REG  162A
+SUB_BUILD_EA_STRING_REGISTER  6
+SUB_BUILD_EA_STRING_REG_NUM  1676
+SUB_BUILD_EA_STRING_REG_TYPE  165E
+SUB_BUILD_EA_STRING_REG_TYPE_A  1670
+SUB_BUILD_EA_STRING_RTS  1698
+SUB_BUILD_EA_STRING_SIZE  4
+SUB_BUILD_FINISH    14CE
+SUB_BUILD_HEX_STRING  1566
+SUB_BUILD_HEX_STRING_CON  158A
+SUB_BUILD_HEX_STRING_HEX  159C
+SUB_BUILD_HEX_STRING_HEX_FLAG  6
+SUB_BUILD_HEX_STRING_LOOP  15A4
+SUB_BUILD_HEX_STRING_MOVE_PTR  15A2
+SUB_BUILD_HEX_STRING_RTS  15BC
+SUB_BUILD_HEX_STRING_SIZE  4
+SUB_BUILD_HEX_STRING_VALUE  8
+SUB_BUILD_STRING    153E
+SUB_BUILD_STRING_COMMA_SPACE  1846
+SUB_BUILD_STRING_LOOP  1550
+SUB_BUILD_STRING_RTS  155E
+SUB_CHECK_BUILD_OP  1728
+SUB_CHECK_BUILD_OP_BYTE_VAL  8
+SUB_CHECK_BUILD_OP_FLAG_INVALID  179A
+SUB_CHECK_BUILD_OP_LONG  177E
+SUB_CHECK_BUILD_OP_LONG_VAL  4
+SUB_CHECK_BUILD_OP_POSITION  A
+SUB_CHECK_BUILD_OP_PRINT  178C
+SUB_CHECK_BUILD_OP_RTS  1796
+SUB_CHECK_BUILD_OP_WORD  176C
+SUB_CHECK_BUILD_OP_WORD_VAL  6
+SUB_CHECK_EA_STRING  17A4
+SUB_CHECK_EA_STRING_ABS  181A
+SUB_CHECK_EA_STRING_ADD  A
+SUB_CHECK_EA_STRING_GET_VALS  17C4
+SUB_CHECK_EA_STRING_LOOP  17F8
+SUB_CHECK_EA_STRING_MODE  8
+SUB_CHECK_EA_STRING_NOT_FOUND  183C
+SUB_CHECK_EA_STRING_PRINT  182A
+SUB_CHECK_EA_STRING_REG  6
+SUB_CHECK_EA_STRING_RTS  1844
+SUB_CHECK_EA_STRING_SIZE  4
+SUB_GET_INPUT_HEX   141E
+SUB_GET_INPUT_HEX_CHECK_SIZE  1454
+SUB_GET_INPUT_HEX_INVALID_ADDR  14A2
+SUB_GET_INPUT_HEX_INVALID_HEX  14B6
+SUB_GET_INPUT_HEX_INVALID_SIZE  14AC
+SUB_GET_INPUT_HEX_LEAD_ZEROS  143A
+SUB_GET_INPUT_HEX_OUTPUT_INVALID  14BC
+SUB_GET_INPUT_HEX_PARSE  145C
+SUB_GET_INPUT_HEX_PARSE_NUM  1488
+SUB_GET_INPUT_HEX_PARSE_OUTPUT  1494
+SUB_GET_INPUT_HEX_PARSE_UC  1478
+SUB_GET_INPUT_HEX_PROMPT  4
+SUB_GET_INPUT_HEX_RTS  14C4
+SUB_GET_NEXT_ABS    16A0
+SUB_GET_NEXT_ABS_ADJ  16BA
+SUB_GET_NEXT_ABS_LONG  16B8
+SUB_GET_NEXT_ABS_SIZE  4
+SUB_HANDY_MASK      189C
+SUB_HANDY_MASK_DONE  18B8
+SUB_HANDY_MASK_LOOP  18AC
+SUB_HANDY_MASK_LOWER  6
+SUB_HANDY_MASK_SIZE  4
+SUB_OP_BCLR         2096
+SUB_OP_MOVEM        2128
+SUB_OP_MOVEM_CHK    218A
+SUB_OP_MOVEM_INC    2196
+SUB_OP_MOVEM_LOOP   213A
+SUB_OP_MOVEM_LOOP_LSL  2150
+SUB_OP_MOVEM_LOOP_OUTPUT  2152
+SUB_OP_MOVEM_REG    211C
+SUB_OP_MOVEM_REV    2124
+SUB_OP_MOVEM_RTS    219A
+SUB_OP_MOVEQ        266C
+SUB_PROCESS_OPCODE  1122
+SUB_PROCESS_OPCODE_ADDR  4
+SUB_PROCESS_OPCODE_BACK_TYPES  1218
+SUB_PROCESS_OPCODE_CHECK_COND  1178
+SUB_PROCESS_OPCODE_CHECK_SIZE  119C
+SUB_PROCESS_OPCODE_FLIP_LOOP  120E
+SUB_PROCESS_OPCODE_OPF_SIZES  11BA
+SUB_PROCESS_OPCODE_RTS  138C
+SUB_PROCESS_OPCODE_RTS_INVALID  1384
+SUB_PROCESS_OPCODE_SKIP_TF  1172
+SUB_PROCESS_OPCODE_TAB  11E8
+SUB_PROCESS_OPCODE_TYPES  121C
+SUB_PROCESS_OPCODE_TYPES_CNT_REG  1262
+SUB_PROCESS_OPCODE_TYPES_DISP  1300
+SUB_PROCESS_OPCODE_TYPES_EA  12D4
+SUB_PROCESS_OPCODE_TYPES_IMM  128A
+SUB_PROCESS_OPCODE_TYPES_NEXT  1362
+SUB_PROCESS_OPCODE_TYPES_REG  123E
+SUB_PROCESS_OPCODE_TYPES_REG_QWK  1246
+SUB_PROCESS_OPCODE_TYPES_STRING  134E
+SUB_PROCESS_OPCODE_TYPES_SUB  1336
+SUB_TAB             186C
+SUB_TAB_LOOP        1880
+SUB_TAB_RTS         1894
+SUB_TAB_SPC_LOOP    1886
+TAB_STOPS           1AA0
+TRUE                1
+WAIT                10E4
+WORD_DISPLACE       0
+WORD_SIZE           2
